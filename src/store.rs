@@ -95,8 +95,10 @@ impl Store {
         Ok(sid)
     }
 
-    /// Persist one turn: ensure the session row, insert the turn, roll up totals.
+    /// Persist one turn atomically: session row, turn insert (unique index on
+    /// (session_id, turn_index)), and rollup - all in one transaction.
     pub async fn record_turn(&self, t: &Turn) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
         sqlx::query(
             "INSERT INTO sessions (id, created_at, updated_at, model) \
              VALUES ($1, extract(epoch from now()), extract(epoch from now()), $2) \
@@ -104,14 +106,14 @@ impl Store {
         )
         .bind(&t.session_id)
         .bind(&t.request_model)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
 
         let idx: (i64,) = sqlx::query_as(
             "SELECT COALESCE(MAX(turn_index), -1) + 1 FROM turns WHERE session_id = $1",
         )
         .bind(&t.session_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await?;
 
         sqlx::query(
@@ -144,7 +146,7 @@ impl Store {
         .bind(t.usage_completion_tokens)
         .bind(t.usage_cached_tokens)
         .bind(t.duration_ms)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
 
         sqlx::query(
@@ -163,8 +165,9 @@ impl Store {
         .bind(t.prompt_ms)
         .bind(t.predicted_ms)
         .bind(&t.session_id)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 

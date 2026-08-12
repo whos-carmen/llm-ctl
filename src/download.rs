@@ -61,25 +61,14 @@ impl DownloadManager {
     }
 
     pub async fn start(&self, req: &HfDownloadReq) -> Result<(), String> {
+        let include = req.include.clone().unwrap_or_else(|| "*.gguf".to_string());
+        // Claim the job under the lock BEFORE spawning so two concurrent
+        // /api/hf/download calls cannot both start a job.
         {
-            let st = self.state.lock().await;
+            let mut st = self.state.lock().await;
             if st.status == "running" {
                 return Err("a download is already running".into());
             }
-        }
-        let include = req.include.clone().unwrap_or_else(|| "*.gguf".to_string());
-
-        let mut cmd = Command::new(&self.cfg.cli[0]);
-        cmd.args(&self.cfg.cli[1..])
-            .arg("download")
-            .arg(&req.repo)
-            .args(["--include", &include])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
-
-        {
-            let mut st = self.state.lock().await;
             *st = Job {
                 status: "running".into(),
                 repo: Some(req.repo.clone()),
@@ -88,6 +77,23 @@ impl DownloadManager {
                 ..Default::default()
             };
         }
+
+        let mut cmd = Command::new(&self.cfg.cli[0]);
+        cmd.args(&self.cfg.cli[1..])
+            .arg("download")
+            .arg(&req.repo)
+            .args(["--include", &include])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let mut st = self.state.lock().await;
+                st.status = "failed".into();
+                st.error = Some(format!("spawn failed: {e}"));
+                return Err(format!("spawn failed: {e}"));
+            }
+        };
 
         let stdout = child.stdout.take().expect("stdout piped");
         let stderr = child.stderr.take().expect("stderr piped");
@@ -108,7 +114,16 @@ impl DownloadManager {
             }
             st.finished_at = Some(now());
             if ok {
-                match resolve_gguf(&cache, &repo) {
+                // Directory walk is blocking I/O: run off the async runtime.
+                let resolved = tokio::task::spawn_blocking({
+                    let cache = cache.clone();
+                    let repo = repo.clone();
+                    move || resolve_gguf(&cache, &repo)
+                })
+                .await
+                .ok()
+                .flatten();
+                match resolved {
                     Some(path) => {
                         let id = derive_id(&path);
                         let mut ms = models.lock().await;

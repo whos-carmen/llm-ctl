@@ -51,21 +51,23 @@ impl RebuildManager {
     }
 
     pub async fn start(&self) -> Result<(), String> {
+        // Claim the job under the lock BEFORE any work so concurrent
+        // /api/rebuild calls cannot both start a job.
         {
-            let st = self.state.lock().await;
+            let mut st = self.state.lock().await;
             if st.status == "running" {
                 return Err("a rebuild is already running".into());
             }
+            *st = Job {
+                status: "running".into(),
+                started_at: Some(now()),
+                ..Default::default()
+            };
         }
         let before_sha = git_sha(&self.llama.repo).await;
         {
             let mut st = self.state.lock().await;
-            *st = Job {
-                status: "running".into(),
-                started_at: Some(now()),
-                before_sha,
-                ..Default::default()
-            };
+            st.before_sha = before_sha;
         }
 
         let state = self.state.clone();

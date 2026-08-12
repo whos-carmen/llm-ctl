@@ -20,8 +20,13 @@ pub enum WorkerStatus {
 /// Shared, async-safe view of the worker.
 pub struct WorkerState {
     pub model_id: Option<String>,
+    pub model: Option<Model>,
     pub pid: Option<u32>,
     pub status: WorkerStatus,
+    pub stopping: bool,
+    pub started_at: Option<std::time::Instant>,
+    pub restarts: u8,
+    pub last_restart: Option<std::time::Instant>,
     pub last_slots: Option<serde_json::Value>,
     pub last_metrics: Option<serde_json::Value>,
 }
@@ -30,8 +35,13 @@ impl WorkerState {
     pub fn new() -> Self {
         Self {
             model_id: None,
+            model: None,
             pid: None,
             status: WorkerStatus::Stopped,
+            stopping: false,
+            started_at: None,
+            restarts: 0,
+            last_restart: None,
             last_slots: None,
             last_metrics: None,
         }
@@ -43,6 +53,8 @@ pub struct Supervisor {
     pub binary: String,
     pub state: Arc<Mutex<WorkerState>>,
     client: reqwest::Client,
+    /// Serializes the spawn/stop/switch lifecycle (TOCTOU guard).
+    lifecycle: Mutex<()>,
 }
 
 impl Supervisor {
@@ -52,6 +64,7 @@ impl Supervisor {
             binary,
             state,
             client: reqwest::Client::new(),
+            lifecycle: Mutex::new(()),
         }
     }
 
@@ -77,6 +90,10 @@ impl Supervisor {
             let mut st = self.state.lock().await;
             st.status = WorkerStatus::Starting;
             st.model_id = Some(model.id.clone());
+            st.model = Some(model.clone());
+            st.started_at = Some(std::time::Instant::now());
+            st.stopping = false;
+            st.restarts = 0;
         }
 
         // Keep worker output for debugging (user state dir, not /tmp - symlink safe).
@@ -105,20 +122,28 @@ impl Supervisor {
         }
 
         // Reap the child's exit; only clear state if it is still our pid.
+        // Unexpected exit (not a deliberate stop) => Crashed so the poller can
+        // honor restart_on_crash.
         let state = self.state.clone();
         tokio::spawn(async move {
             let _ = child.wait().await;
             let mut st = state.lock().await;
             if st.pid == pid {
                 st.pid = None;
-                st.status = WorkerStatus::Stopped;
+                st.status = if st.stopping {
+                    WorkerStatus::Stopped
+                } else {
+                    WorkerStatus::Crashed("worker exited unexpectedly".into())
+                };
             }
         });
         Ok(())
     }
 
     /// Switch to `model`: stop the current worker if a different one is active.
+    /// Serialized via `lifecycle` to avoid TOCTOU between concurrent /start calls.
     pub async fn start_model(&self, model: &Model, host: &str) -> Result<()> {
+        let _guard = self.lifecycle.lock().await;
         {
             let st = self.state.lock().await;
             if st.model_id.as_deref() == Some(model.id.as_str()) && st.pid.is_some() {
@@ -135,6 +160,10 @@ impl Supervisor {
     pub async fn stop(&self) -> Result<()> {
         let pid = self.state.lock().await.pid;
         if let Some(pid) = pid {
+            {
+                let mut st = self.state.lock().await;
+                st.stopping = true;
+            }
             let _ = Command::new("/bin/kill").arg("-TERM").arg(pid.to_string()).status();
             for _ in 0..10 {
                 if !pid_alive(pid) {
@@ -149,14 +178,16 @@ impl Supervisor {
         let mut st = self.state.lock().await;
         st.pid = None;
         st.status = WorkerStatus::Stopped;
+        st.stopping = false;
         Ok(())
     }
 
-    /// Health poll: flip Starting -> Ready, or mark Crashed.
+    /// Health poll: Starting -> Ready (with a 60s grace so slow model loads
+    /// aren't misreported as crashes); Ready -> Crashed on failure.
     pub async fn poll(&self) {
         let has_pid = self.state.lock().await.pid.is_some();
         if !has_pid {
-            return;
+            return; // wait-task owns Stopped/Crashed transitions when pid is gone
         }
         let ok = self
             .client
@@ -166,11 +197,63 @@ impl Supervisor {
             .await
             .map(|r| r.status().is_success())
             .unwrap_or(false);
+        let (status, started_at) = {
+            let st = self.state.lock().await;
+            (st.status.clone(), st.started_at)
+        };
         let mut st = self.state.lock().await;
         if ok {
             st.status = WorkerStatus::Ready;
-        } else {
-            st.status = WorkerStatus::Crashed("worker health check failed".into());
+            return;
+        }
+        match status {
+            WorkerStatus::Starting => {
+                if started_at
+                    .map(|s| s.elapsed() > Duration::from_secs(60))
+                    .unwrap_or(false)
+                {
+                    st.status = WorkerStatus::Crashed("model load timed out".into());
+                }
+                // else: still loading; keep Starting
+            }
+            WorkerStatus::Ready | WorkerStatus::Crashed(_) => {
+                st.status = WorkerStatus::Crashed("worker health check failed".into());
+            }
+            _ => {}
+        }
+    }
+
+    /// Restart a Crashed worker when restart_on_crash allows (5s cooldown,
+    /// max_restarts cap). Returns true if a restart was triggered.
+    pub async fn maybe_restart(&self) -> bool {
+        let (want, model) = {
+            let st = self.state.lock().await;
+            let want = self.worker.restart_on_crash
+                && u32::from(st.restarts) < self.worker.max_restarts
+                && matches!(st.status, WorkerStatus::Crashed(_))
+                && st
+                    .last_restart
+                    .map(|l| l.elapsed() > Duration::from_secs(5))
+                    .unwrap_or(true);
+            (want, st.model.clone())
+        };
+        if !want {
+            return false;
+        }
+        let Some(model) = model else { return false };
+        {
+            let mut st = self.state.lock().await;
+            st.restarts += 1;
+            st.last_restart = Some(std::time::Instant::now());
+        }
+        tracing::warn!(model = %model.id, "restarting crashed worker");
+        let _ = self.stop().await; // clear stale pid/port (no-op if already gone)
+        match self.spawn(&model, "127.0.0.1").await {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::error!(%e, "worker restart spawn failed");
+                false
+            }
         }
     }
 

@@ -67,12 +67,12 @@ pub async fn fallback(State(st): State<AppState>, req: Request<Body>) -> AxRespo
     if is_completion {
         handle_completion(st, req).await
     } else {
-        forward(&worker_base(&st), req).await
+        forward(&st.http, &worker_base(&st), req).await
     }
 }
 
 /// Plain byte-for-byte forward (GETs, /v1/models, /health, /metrics, /slots...).
-async fn forward(base: &str, req: Request<Body>) -> AxResponse {
+async fn forward(client: &reqwest::Client, base: &str, req: Request<Body>) -> AxResponse {
     let method = req.method().clone();
     let query = req
         .uri()
@@ -85,7 +85,6 @@ async fn forward(base: &str, req: Request<Body>) -> AxResponse {
         Ok(b) => b,
         Err(_) => return err_json(413, "request body too large"),
     };
-    let client = reqwest::Client::new();
     let upstream = match client.request(method, &url).headers(headers).body(body).send().await {
         Ok(r) => r,
         Err(e) => return err_json(502, &format!("upstream unreachable: {e}")),
@@ -166,8 +165,8 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
 
     let start = Instant::now();
     let url = format!("{}{}", worker_base(&st), path);
-    let client = reqwest::Client::new();
-    let upstream = match client
+    let upstream = match st
+        .http
         .request(Method::POST, &url)
         .headers(headers)
         .body(body.clone())
@@ -371,17 +370,19 @@ async fn stream_and_record(
 
     tokio::spawn(async move {
         let mut stream = upstream.bytes_stream();
-        let mut buf = String::new();
+        let mut buf: Vec<u8> = Vec::new();
         let mut client_gone = false;
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(b) => {
                     if !session_id.is_empty() {
-                        buf.push_str(&String::from_utf8_lossy(&b));
+                        buf.extend_from_slice(&b);
                         let mut col = collector.lock().unwrap();
-                        while let Some(pos) = buf.find('\n') {
-                            let line: String = buf.drain(..=pos).collect();
-                            col.feed(&line);
+                        // Split on newlines at the BYTE level so multi-byte UTF-8
+                        // chars split across TCP chunks are not corrupted.
+                        while let Some(pos) = buf.iter().position(|&x| x == b'\n') {
+                            let line: Vec<u8> = buf.drain(..=pos).collect();
+                            col.feed(&String::from_utf8_lossy(&line));
                         }
                         // Defensive: drop a giant partial line instead of growing forever.
                         if buf.len() > MAX_SSE_BUF {

@@ -95,6 +95,21 @@ pub struct Model {
 impl Config {
     pub fn load(path: &str) -> Result<Self> {
         let text = std::fs::read_to_string(path)?;
-        Ok(toml::from_str(&text)?)
+        let mut cfg: Config = toml::from_str(&text)?;
+        // Expand ~ in the paths we later touch directly.
+        cfg.llama.repo = expand_tilde(&cfg.llama.repo);
+        cfg.llama.build_dir = expand_tilde(&cfg.llama.build_dir);
+        cfg.llama.binary = expand_tilde(&cfg.llama.binary);
+        cfg.hf.cache = expand_tilde(&cfg.hf.cache);
+        Ok(cfg)
     }
+}
+
+fn expand_tilde(p: &str) -> String {
+    if let Some(rest) = p.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{home}/{rest}");
+        }
+    }
+    p.to_string()
 }

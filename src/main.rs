@@ -28,6 +28,7 @@ pub struct AppState {
     pub models: Arc<Mutex<Vec<config::Model>>>,
     pub download: Arc<download::DownloadManager>,
     pub rebuild: Arc<rebuild::RebuildManager>,
+    pub http: reqwest::Client,
 }
 
 async fn health(State(st): State<AppState>) -> Json<serde_json::Value> {
@@ -41,7 +42,10 @@ async fn health(State(st): State<AppState>) -> Json<serde_json::Value> {
             w.last_metrics.clone(),
         )
     };
-    let pve = pve::list_containers(&st.cfg).await.is_ok();
+    let pve = tokio::time::timeout(std::time::Duration::from_secs(1), pve::list_containers(&st.cfg))
+        .await
+        .map(|r| r.is_ok())
+        .unwrap_or(false);
     let postgres = db::probe(&st.cfg.db.pgurl).await.is_ok();
     Json(json!({
         "service": "llm-ctl",
@@ -232,7 +236,8 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("no autostart model configured; worker not started");
     }
 
-    // Supervisor poller: health (Starting -> Ready / Crashed) + /slots + /metrics.
+    // Supervisor poller: health (Starting -> Ready / Crashed), restart on
+    // crash, + /slots + /metrics.
     {
         let sup = sup.clone();
         tokio::spawn(async move {
@@ -240,6 +245,7 @@ async fn main() -> anyhow::Result<()> {
             loop {
                 tick.tick().await;
                 sup.poll().await;
+                sup.maybe_restart().await;
                 sup.poll_slots().await;
             }
         });
@@ -272,6 +278,7 @@ async fn main() -> anyhow::Result<()> {
         models,
         download,
         rebuild,
+        http: reqwest::Client::new(),
     };
     let app = Router::new()
         .route("/api/health", get(health))
