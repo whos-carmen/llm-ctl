@@ -1,11 +1,10 @@
 # pi-bar config - isotope theme (base16-isotope, Plasma/Konsole port)
-# NOTE: this strict TOML parser requires status states to have name+bg, rejects
-# literal [ ] inside strings, and does NOT strip trailing # comments on value
-# lines. Comments live on their own lines only.
+# Neon text on dark surfaces for readability (solid neon chips were hard to
+# read). Parser notes: status states require name+bg, literal [ ] in strings
+# misparse, and trailing # comments on value lines are NOT stripped.
 
 [colors]
 text_fg = "#d0d0d0"
-dark = "#0a0a0a"
 dir_bg = "#101010"
 model_bg = "#1a1a1a"
 thinking_bg = "#1a1a1a"
@@ -46,10 +45,11 @@ type = "meter"
 value_eval = "ctx.getContextUsage()?.percent ?? 0"
 template = "{percent}% of {context_window}"
 fg = "text_fg"
+bg = "dir_bg"
 states = [
-  { gte = 75, bg = "alert", fg = "dark" },
-  { gte = 50, bg = "warn", fg = "dark" },
-  { gte = 0, bg = "ok", fg = "dark" },
+  { gte = 75, bg = "dir_bg", fg = "alert" },
+  { gte = 50, bg = "dir_bg", fg = "warn" },
+  { gte = 0, bg = "dir_bg", fg = "ok" },
 ]
 
 [[statusbar.segments]]
@@ -65,10 +65,11 @@ type = "status"
 key = "llama"
 template = " {text} "
 fg = "text_fg"
+bg = "dir_bg"
 states = [
-  { name = "high_cache", match = "cache (5|6|7|8|9)|cache 100", bg = "ok", fg = "dark" },
-  { name = "mid_cache", match = "cache (2|3|4)", bg = "warn", fg = "dark" },
-  { name = "low_cache", match = "cache (0|1)|cache --", bg = "alert", fg = "dark" },
+  { name = "high_cache", match = "cache (5|6|7|8|9)|cache 100", bg = "dir_bg", fg = "ok" },
+  { name = "mid_cache", match = "cache (2|3|4)", bg = "dir_bg", fg = "warn" },
+  { name = "low_cache", match = "cache (0|1)|cache --", bg = "dir_bg", fg = "alert" },
   { name = "default", bg = "dir_bg", fg = "cyan" },
 ]
 
@@ -77,11 +78,12 @@ type = "status"
 key = "mcp"
 template = " {text} "
 fg = "text_fg"
+bg = "dir_bg"
 states = [
-  { name = "all_connected", match = "\\d+/\\d+ server", bg = "ok", fg = "dark" },
-  { name = "none_connected", match = "0/\\d+ server", bg = "alert", fg = "dark" },
-  { name = "partial", match = "\\d+/\\d+ server", bg = "warn", fg = "dark" },
-  { name = "default", template = "  {text} ", bg = "dir_bg", fg = "cyan" },
+  { name = "all_connected", match = "\\d+/\\d+ server", bg = "dir_bg", fg = "ok" },
+  { name = "none_connected", match = "0/\\d+ server", bg = "dir_bg", fg = "alert" },
+  { name = "partial", match = "\\d+/\\d+ server", bg = "dir_bg", fg = "warn" },
+  { name = "default", template = "  {text} ", bg = "dir_bg", fg = "warn" },
 ]
 
 [[statusbar.segments]]
@@ -89,4 +91,5 @@ type = "status"
 key = "*"
 template = " {text} "
 fg = "text_fg"
+bg = "dir_bg"
 states = [{ name = "default", bg = "dir_bg", fg = "cyan" }]

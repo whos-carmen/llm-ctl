@@ -29,6 +29,8 @@ pub struct WorkerState {
     pub last_restart: Option<std::time::Instant>,
     /// Epoch seconds of the last accepted completion (for idle gating in UIs).
     pub last_request_at: Option<f64>,
+    /// Cache stats of the last recorded turn (cache_n, prompt_n, predicted_n).
+    pub last_turn: Option<serde_json::Value>,
     pub last_slots: Option<serde_json::Value>,
     pub last_metrics: Option<serde_json::Value>,
 }
@@ -45,6 +47,7 @@ impl WorkerState {
             restarts: 0,
             last_restart: None,
             last_request_at: None,
+            last_turn: None,
             last_slots: None,
             last_metrics: None,
         }

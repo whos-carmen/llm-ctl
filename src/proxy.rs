@@ -189,7 +189,7 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
     };
 
     if stream {
-        stream_and_record(upstream, st.store, session_id, model, messages, max_tokens, temperature, start).await
+        stream_and_record(upstream, st.store, st.worker, session_id, model, messages, max_tokens, temperature, start).await
     } else {
         let status = upstream.status();
         let mut out_headers = Vec::new();
@@ -269,13 +269,26 @@ fn build_turn(
     }
 }
 
-async fn record_turn(store: &Option<Arc<Store>>, turn: Turn) {
+async fn record_turn(
+    store: &Option<Arc<Store>>,
+    worker: &Arc<tokio::sync::Mutex<crate::supervisor::WorkerState>>,
+    turn: &Turn,
+) {
     if turn.session_id.is_empty() {
         return;
     }
+    // Stash the turn's cache stats for the status bar.
+    {
+        let mut w = worker.lock().await;
+        w.last_turn = Some(serde_json::json!({
+            "cache_n": turn.cache_n,
+            "prompt_n": turn.prompt_n,
+            "predicted_n": turn.predicted_n,
+        }));
+    }
     match store {
         Some(s) => {
-            if let Err(e) = s.record_turn(&turn).await {
+            if let Err(e) = s.record_turn(turn).await {
                 tracing::warn!(%e, "record turn failed");
             }
         }
@@ -314,7 +327,7 @@ async fn record_from_response(
         &session_id, model, messages, max_tokens, temperature, id, content, finish,
         &usage, &timings, start.elapsed().as_secs_f64() * 1000.0,
     );
-    record_turn(&st.store, turn).await;
+    record_turn(&st.store, &st.worker, &turn).await;
 }
 
 // --- Streaming -------------------------------------------------------------
@@ -360,6 +373,7 @@ impl Collector {
 async fn stream_and_record(
     upstream: reqwest::Response,
     store: Option<Arc<Store>>,
+    worker: Arc<tokio::sync::Mutex<crate::supervisor::WorkerState>>,
     session_id: String,
     model: String,
     messages: Option<Value>,
@@ -432,7 +446,7 @@ async fn stream_and_record(
                     start.elapsed().as_secs_f64() * 1000.0,
                 )
             };
-            record_turn(&store, turn).await;
+            record_turn(&store, &worker, &turn).await;
         }
     });
 

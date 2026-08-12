@@ -3,11 +3,10 @@
  *
  * Polls the llm-ctl daemon (/api/status-rollup) and publishes
  *   cache <hit%> · ctx <used%>
- * derived from the llama-server worker slot:
- *   cache% = (n_prompt_tokens - n_prompt_tokens_processed) / n_prompt_tokens
- *            (processed already EXCLUDES cache-reused tokens; n_prompt_tokens_cache
- *             stays 0 in current llama.cpp builds)
- *   ctx%   = n_prompt_tokens / n_ctx
+ * cache% comes from the most recent recorded turn (last_turn) when present,
+ * otherwise from the most recent session's aggregate cache hit rate (Postgres)
+ * - so a resumed session shows its conversation's cache state right away.
+ * ctx%   = worker slot n_prompt_tokens / n_ctx.
  *
  * Plain text; pi-bar applies the isotope color states in its config.toml.
  */
@@ -21,14 +20,26 @@ function pct(n: number, d: number): string {
   return ((n / d) * 100).toFixed(1) + "%";
 }
 
-function buildText(slots: any[]): string {
+function cachePct(lastTurn: any, sessions: any[]): string {
+  if (lastTurn) {
+    const c = lastTurn.cache_n ?? 0;
+    const p = lastTurn.prompt_n ?? 0;
+    if (c + p > 0) return pct(c, c + p);
+  }
+  const s = (sessions || [])[0];
+  if (s && typeof s.cache_hit_pct === "number") return s.cache_hit_pct.toFixed(1) + "%";
+  return "--";
+}
+
+function ctxPct(slots: any[]): string {
   const s = (slots || [])[0];
-  if (!s) return "cache -- · ctx --";
-  const total = s.n_prompt_tokens ?? 0;
-  const processed = s.n_prompt_tokens_processed ?? 0;
-  const cached = Math.max(total - processed, 0);
-  const nctx = s.n_ctx ?? 0;
-  return `cache ${pct(cached, total)} · ctx ${pct(total, nctx)}`;
+  if (!s) return "--";
+  return pct(s.n_prompt_tokens ?? 0, s.n_ctx ?? 0);
+}
+
+function buildText(data: any): string {
+  const worker = data?.worker || {};
+  return `cache ${cachePct(worker.last_turn, data?.sessions)} · ctx ${ctxPct(worker.slots)}`;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -40,14 +51,7 @@ export default function (pi: ExtensionAPI) {
       const resp = await fetch(ROLLUP_URL, { signal: AbortSignal.timeout(2000) });
       if (!resp.ok) throw new Error(String(resp.status));
       const data = await resp.json();
-      const worker = data?.worker || {};
-      const last = worker.last_request_at;
-      const now = Date.now() / 1000;
-      // Only show live stats shortly after real activity; otherwise "--".
-      // (The worker slot keeps the LAST request's numbers, which is confusing
-      // when nothing has run - e.g. a fresh pi session.)
-      if (typeof last !== "number" || now - last > 60) return "cache -- · ctx --";
-      return buildText(worker?.slots);
+      return buildText(data);
     } catch {
       return "cache -- · ctx --";
     }
