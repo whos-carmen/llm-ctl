@@ -1,10 +1,11 @@
 # llm-ctl example config. Copy to ./config.toml (gitignored) and adjust.
 #
-# SECURITY POSTURE (decided 2026-08): NO auth, plain HTTP, LAN-only. This daemon
-# must NOT be reachable from outside the private network. Keep listen.host on
-# 127.0.0.1 unless you explicitly want LAN clients; if you open it to the LAN,
-# accept that any device on the network can use the API.
-listen = { host = "127.0.0.1", port = 8082 }
+# SECURITY POSTURE (decided 2026-08): NO auth, plain HTTP, LAN-open. This is a
+# headless host; the panel/API are reached from other devices on the private
+# network. Must NOT be reachable from outside the private network. ANY device
+# on the LAN can use the API (no auth). To restrict again set host back to
+# 127.0.0.1 and use `ssh -L 8082:127.0.0.1:8082 <host>` for remote access.
+listen = { host = "0.0.0.0", port = 8082 }
 
 [llama]
 repo       = "/home/pixie/llama"

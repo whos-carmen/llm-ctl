@@ -175,3 +175,7 @@ Open questions live at DESIGN.md §8 (single-client strictness, auto-load vs
   only run it when you intend it to own the worker.
 - **dev token:** PVE token `agent-admin` is dev-only; rotate to least-privilege
   before anything leaves localhost.
+- **LAN-open, no auth:** `listen.host = 0.0.0.0` (headless host; panel/API used
+  from other devices). ANY device on the LAN can drive the API. Restrict again
+  by setting `127.0.0.1` + `ssh -L 8082:127.0.0.1:8082 <host>`. `/api` POSTs
+  need the `X-LLM-CTL: 1` header (CSRF guard) - the panel sends it automatically.

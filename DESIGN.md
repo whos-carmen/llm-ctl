@@ -134,7 +134,7 @@ worker child and a fixed worker port.
 
 | Port | Owner | Purpose |
 | --- | --- | --- |
-| `:8082` | llm-ctl | single listen socket: proxy `/v1/*`, JSON API `/api/*`, web panel `/` |
+| `:8082` | llm-ctl | single listen socket: proxy `/v1/*`, JSON API `/api/*`, web panel `/`. Binds `0.0.0.0` (LAN-open, headless host reached from other devices) - NO auth, so any LAN device can use it. |
 | `:8080` | llama-server | the single worker (fixed; configurable) |
 
 The worker binds `--host 127.0.0.1` (loopback only) since llm-ctl is the only
