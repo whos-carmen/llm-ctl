@@ -6,6 +6,7 @@ mod pve;
 mod proxy;
 mod reap;
 mod rebuild;
+mod stats;
 mod store;
 mod supervisor;
 
@@ -43,6 +44,8 @@ pub struct AppState {
     pub active_session: Arc<Mutex<Option<String>>>,
     /// Static llama build info (git commit/branch + worker binary), for the UI.
     pub llama_info: serde_json::Value,
+    /// Live host metrics (CPU/GPU), updated by a poll task.
+    pub stats: Arc<tokio::sync::Mutex<stats::HostStats>>,
 }
 
 /// Read llama.cpp's current git commit/branch for the panel footer/info card.
@@ -339,6 +342,7 @@ async fn handle_status_rollup(State(st): State<AppState>) -> Response {
     .map(|r| r.is_ok())
     .unwrap_or(false);
     let postgres = db::probe(&st.cfg.db.pgurl).await.is_ok();
+    let stats = st.stats.lock().await.clone();
     Json(json!({
         "worker": worker,
         "models": models,
@@ -347,6 +351,7 @@ async fn handle_status_rollup(State(st): State<AppState>) -> Response {
         "rebuild": st.rebuild.job().await,
         "llama": st.llama_info.clone(),
         "builds": st.rebuild.history().await,
+        "stats": stats,
         "cross_tier": { "pve": pve, "postgres": postgres },
     }))
     .into_response()
@@ -395,6 +400,23 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Host stats poller: CPU (delta) + GPU sysfs, ~2s. Kept independent of the
+    // supervisor poller so a worker issue never stalls the monitor.
+    let stats_arc = Arc::new(tokio::sync::Mutex::new(stats::HostStats::default()));
+    {
+        let stats = stats_arc.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(2));
+            let mut prev = stats::init_cpu();
+            loop {
+                tick.tick().await;
+                let (s, p) = stats::sample(prev);
+                prev = p;
+                *stats.lock().await = s;
+            }
+        });
+    }
+
     // Session store (Postgres on the ops tier). Non-fatal if unavailable.
     let store = match store::Store::connect(&cfg.db.pgurl).await {
         Ok(s) => {
@@ -430,6 +452,7 @@ async fn main() -> anyhow::Result<()> {
         http,
         busy: Arc::new(AtomicBool::new(false)),
         active_session: Arc::new(Mutex::new(None)),
+        stats: stats_arc,
         llama_info: tokio::task::spawn_blocking({
             let repo = cfg.llama.repo.clone();
             let binary = cfg.llama.binary.clone();

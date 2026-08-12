@@ -83,7 +83,28 @@ function render(s) {
   $("hf-files").disabled = !!s.download && s.download.status === "running";
   $("rebuild-go").disabled = !!s.rebuild && s.rebuild.status === "running";
 
-  // llama build info + previous builds
+  // Live CPU/GPU gauges (rolling 40-sample history for the bars).
+const statsHist = { cpu: [], gpu: [], vram: [], temp: [] };
+const HIST = 40;
+function renderStats(s) {
+  s = s || {};
+  const push = (k, v) => { statsHist[k].push(v); if (statsHist[k].length > HIST) statsHist[k].shift(); };
+  const set = (idv, idb, v, maxv) => {
+    $(idv).textContent = (v == null) ? "—" : Number(v).toFixed(0);
+    $(idb).style.width = (v == null ? 0 : Math.max(0, Math.min(100, (100 * Number(v)) / maxv))) + "%";
+  };
+  const cpu = Number(s.cpu_pct ?? 0); push("cpu", cpu); set("cpu-val", "cpu-bar", cpu, 100);
+  const gpu = (s.gpu_pct == null) ? null : Number(s.gpu_pct); push("gpu", gpu ?? 0); set("gpu-val", "gpu-bar", gpu, 100);
+  const vramPct = (s.vram_total_mb) ? (100 * Number(s.vram_used_mb ?? 0)) / Number(s.vram_total_mb) : null;
+  push("vram", vramPct ?? 0); set("vram-val", "vram-bar", vramPct, 100);
+  const temp = (s.gpu_temp_c == null) ? null : Number(s.gpu_temp_c); push("temp", temp ?? 0); set("temp-val", "temp-bar", temp, 100);
+  const vr = (s.vram_used_mb != null && s.vram_total_mb != null)
+    ? Math.round(s.vram_used_mb) + "/" + Math.round(s.vram_total_mb) + " MB" : "—";
+  $("#vram-sub").textContent = vr;
+  $("#temp-val").setAttribute("title", temp == null ? "—" : temp.toFixed(0) + " °C");
+}
+
+// llama build info + previous builds
   const li = s.llama || {};
   $("llama-info").textContent = `commit ${esc(li.commit)} · ${esc(li.branch)} · ${esc(li.binary)}`;
   const blds = s.builds || [];
@@ -96,6 +117,8 @@ function render(s) {
           <span>${b.ok ? "ok" : "failed"}</span></div>`;
       }).join("")
     : "no recent builds";
+
+  renderStats(s.stats);
 }
 
 function renderJob(name, job, label) {

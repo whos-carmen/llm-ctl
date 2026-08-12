@@ -24,6 +24,7 @@
   --color-purple: #cc00ff;    /* shell/aux */
 
   --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
 }
 
 body {
