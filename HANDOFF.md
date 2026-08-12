@@ -145,8 +145,13 @@ cd ~/llm-ctl && nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &
   (docs/qwen-review-2026-08-12.md). Fixed High+Medium: tokio sleep in stop(),
   10MB body cap, PVE TLS now CA-pinned (was disabled), worker log to XDG state
   dir, PID-reuse guard, SSE buffer cap, rand session ids. **User decisions:
-  NO auth + plain HTTP, LAN-only** (documented in config.example). CT 200
-  reverse-proxy/TLS deferred (not needed without TLS).
+  NO auth + plain HTTP, LAN-only** (documented in config.example).
+- **M8.2 (proxy face) — DONE**: nginx on CT 200 (`llm-ctl-ops` @ `192.168.7.50`)
+  is now the public LAN face for the panel + `/api` + `/v1`
+  (`infra/nginx/llm-ctl-ops.conf`); the LLM host only runs the inference core
+  (daemon bound `0.0.0.0:8082` so nginx can reach it). Verified: panel, rollup,
+  CSRF-header POST, streaming completion + Postgres recording all through
+  `192.168.7.50`.
 - **M9** web panel (Tailwind v4 + isotope theme) wired to `/api/*`, SSE.
 - **M8.1 — DONE (d83bd6b)**: all findings from the qwen3.7-max deep review
   fixed (shared reqwest client, transactional record_turn + unique turn index,
@@ -175,7 +180,9 @@ Open questions live at DESIGN.md §8 (single-client strictness, auto-load vs
   only run it when you intend it to own the worker.
 - **dev token:** PVE token `agent-admin` is dev-only; rotate to least-privilege
   before anything leaves localhost.
-- **LAN-open, no auth:** `listen.host = 0.0.0.0` (headless host; panel/API used
-  from other devices). ANY device on the LAN can drive the API. Restrict again
-  by setting `127.0.0.1` + `ssh -L 8082:127.0.0.1:8082 <host>`. `/api` POSTs
-  need the `X-LLM-CTL: 1` header (CSRF guard) - the panel sends it automatically.
+- **LAN-open, no auth:** the LAN face is nginx on CT 200 (`http://192.168.7.50/` ->
+  panel, `/api` + `/v1` -> `192.168.7.23:8082`; config `infra/nginx/llm-ctl-ops.conf`).
+  ANY device on the LAN can drive the API. `/api` POSTs need `X-LLM-CTL: 1`
+  (CSRF guard; the panel sends it, and it survives the nginx hop). To lock down
+  further: restrict nginx to specific clients, or bind llm-ctl back to 127.0.0.1
+  + `ssh -L 8082:127.0.0.1:8082 <host>` for direct access.

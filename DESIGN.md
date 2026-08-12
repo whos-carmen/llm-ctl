@@ -134,7 +134,8 @@ worker child and a fixed worker port.
 
 | Port | Owner | Purpose |
 | --- | --- | --- |
-| `:8082` | llm-ctl | single listen socket: proxy `/v1/*`, JSON API `/api/*`, web panel `/`. Binds `0.0.0.0` (LAN-open, headless host reached from other devices) - NO auth, so any LAN device can use it. |
+| `:80` | nginx (CT 200 `llm-ctl-ops` @ `192.168.7.50`) | **the public face**: fronts the panel, `/api/*` and `/v1/*` -> `192.168.7.23:8082` (config: `infra/nginx/llm-ctl-ops.conf`). |
+| `:8082` | llm-ctl | llm-ctl daemon on the LLM host (panel + API + proxy). Binds `0.0.0.0` so nginx can reach it; normally only used via the Proxmox face. |
 | `:8080` | llama-server | the single worker (fixed; configurable) |
 
 The worker binds `--host 127.0.0.1` (loopback only) since llm-ctl is the only
