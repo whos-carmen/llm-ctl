@@ -45,8 +45,20 @@ fn read_secret() -> Result<String> {
             return Ok(v.trim().to_string());
         }
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    let text = std::fs::read_to_string(format!("{home}/.keys"))?;
+    let home = std::env::var("HOME").map_err(|_| anyhow::anyhow!("HOME unset"))?;
+    let path = std::path::Path::new(&home).join(".keys");
+    // The secret file should not be group/other readable.
+    if let Ok(meta) = std::fs::metadata(&path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = meta.permissions().mode() & 0o077;
+            if mode != 0 {
+                tracing::warn!("~/.keys is group/other readable ({:03o}); chmod 600 it", mode);
+            }
+        }
+    }
+    let text = std::fs::read_to_string(&path)?;
     for line in text.lines() {
         if let Some((k, v)) = line.split_once('=') {
             if k.trim() == "PROXMOX_AGENT_ADMIN" {
@@ -59,33 +71,39 @@ fn read_secret() -> Result<String> {
 
 async fn client(cfg: &Config) -> Result<reqwest::Client> {
     let builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(8));
-    let builder = match &cfg.proxmox.cert_file {
-        Some(path) => {
-            // Pin the PVE cert chain: trust ONLY the certs in this file.
-            let path = expand_tilde(path);
-            let pem = std::fs::read_to_string(&path)?;
-            let mut builder = builder.tls_built_in_root_certs(false);
-            let mut found = 0usize;
-            for block in pem.split("-----BEGIN CERTIFICATE-----").skip(1) {
-                let block = format!("-----BEGIN CERTIFICATE-----{block}");
-                match reqwest::Certificate::from_pem(block.as_bytes()) {
-                    Ok(c) => {
-                        builder = builder.add_root_certificate(c);
-                        found += 1;
-                    }
-                    Err(e) => tracing::warn!(%e, "skip bad cert block in {path}"),
-                }
-            }
-            if found == 0 {
-                anyhow::bail!("no valid certificates in pinned file {path}");
-            }
-            builder
+    let cert_path = cfg
+        .proxmox
+        .cert_file
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("proxmox.cert_file is required (PVE TLS must be pinned; fail-closed)"))?;
+    // Pin the PVE cert chain: trust ONLY the certs in this file.
+    let path = expand_tilde(cert_path);
+    let pem = std::fs::read_to_string(&path)?;
+    let mut builder = builder.tls_built_in_root_certs(false);
+    let mut found = 0usize;
+    // Split on DER-encoded PEM blocks robustly (handles a bundle/chain), each
+    // wrapped in its BEGIN/END markers.
+    for block in pem.split("-----BEGIN CERTIFICATE-----").skip(1) {
+        let end = block
+            .find("-----END CERTIFICATE-----")
+            .map(|i| i + "-----END CERTIFICATE-----".len())
+            .unwrap_or(block.len());
+        let block = format!("-----BEGIN CERTIFICATE-----{}", &block[..end]);
+        if !block.trim().ends_with("-----END CERTIFICATE-----") {
+            tracing::warn!("skip unterminated cert block in {path}");
+            continue;
         }
-        None => {
-            tracing::warn!("proxmox.cert_file unset; TLS verification disabled for PVE");
-            builder.danger_accept_invalid_certs(true)
+        match reqwest::Certificate::from_pem(block.as_bytes()) {
+            Ok(c) => {
+                builder = builder.add_root_certificate(c);
+                found += 1;
+            }
+            Err(e) => tracing::warn!(%e, "skip bad cert block in {path}"),
         }
-    };
+    }
+    if found == 0 {
+        anyhow::bail!("no valid certificates in pinned file {path}");
+    }
     Ok(builder.build()?)
 }
 

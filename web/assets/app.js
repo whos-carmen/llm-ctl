@@ -24,6 +24,8 @@ async function fetchStatus() {
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+const asInt = (n) => Number.isFinite(Number(n)) ? String(Math.round(Number(n))) : "0";
+const asFloat = (n) => Number.isFinite(Number(n)) ? String(Number(n).toFixed(1)) : "0.0";
 
 function render(s) {
   // worker
@@ -62,9 +64,9 @@ function render(s) {
     return `<tr class="border-b border-line/50">
       <td class="py-1 pr-2 truncate max-w-32 text-cyan">${esc(r.id)}</td>
       <td class="py-1 pr-2 text-dim truncate max-w-24">${esc(r.model || "")}</td>
-      <td class="py-1 pr-2 text-right">${r.requests}</td>
-      <td class="py-1 pr-2 text-right">${r.prompt_tokens}</td>
-      <td class="py-1 pr-2 text-right">${r.completion_tokens}</td>
+      <td class="py-1 pr-2 text-right">${asInt(r.requests)}</td>
+      <td class="py-1 pr-2 text-right">${asInt(r.prompt_tokens)}</td>
+      <td class="py-1 pr-2 text-right">${asInt(r.completion_tokens)}</td>
       <td class="py-1 text-right ${cls}">${cache.toFixed(1)}%</td>
     </tr>`;
   }).join("") || '<tr><td colspan="6" class="py-2 text-faint">no sessions</td></tr>';
@@ -134,7 +136,7 @@ $("hf-list").addEventListener("click", async () => {
     const files = r.files || [];
     sel.innerHTML =
       '<option value="">choose a GGUF…</option>' +
-      files.map((f) => `<option value="${esc(f.path)}">${esc(f.path)} (${f.size_mb} MB)</option>`).join("");
+      files.map((f) => `<option value="${esc(f.path)}">${esc(f.path)} (${asFloat(f.size_mb)} MB)</option>`).join("");
     $("hf-job").textContent = files.length ? `${files.length} GGUF files` : "no .gguf files in this repo";
   } catch (e) {
     sel.innerHTML = '<option value="">choose a GGUF…</option>';

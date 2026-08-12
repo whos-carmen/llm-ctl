@@ -101,6 +101,11 @@ impl Config {
         cfg.llama.build_dir = expand_tilde(&cfg.llama.build_dir);
         cfg.llama.binary = expand_tilde(&cfg.llama.binary);
         cfg.hf.cache = expand_tilde(&cfg.hf.cache);
+        // Fail closed for the PVE API: never send the dev token over plaintext
+        // or unverified TLS.
+        if !cfg.proxmox.api.starts_with("https://") {
+            anyhow::bail!("proxmox.api must be https:// (got '{}')", cfg.proxmox.api);
+        }
         Ok(cfg)
     }
 }
