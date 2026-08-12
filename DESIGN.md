@@ -563,30 +563,28 @@ config (`[proxmox.cts]`) and the IaC, so one change stays in lockstep.
 
 ---
 
-## 8. Open questions (resolve during implementation)
+## 8. Decisions (resolved 2026-08-12)
 
-- **Session binding**: keep the "active session within 30 min" heuristic as
-  default, with explicit `X-Session-Id` header override? (Design SS4.2 assumes yes.)
-- **Single-client strictness**: with `-np 1`, llama-server already defers extra
-  requests in a queue. Do we accept that soft single-client (overlap queues) or
-  hard-reject a second distinct client while one turn is in flight? Default:
-  soft (queue), simplest and matches llama-server semantics. A client id / busy
-  flag would be needed for hard mode.
-- **Model-not-active request**: respond 404/409 with a hint (default), or
-  auto-load the requested model from config? Default: error + hint; the UI is
-  the intended way to load.
-- **HF download granularity**: pick the wanted quant after listing the repo's
-  GGUF files (nicer) vs. just `--include '*.gguf'` (simpler). Likely: list then
-  pick.
-- **Auth**: localhost-only bind makes auth low priority; add a shared token for
-  `/api/*` + `/v1/*` if exposed beyond loopback. Out of scope until then.
-- **PVE integration scope**: does `llm-ctl` manage the ops-tier containers
-  (create/label/start/stop via the web panel), or is Proxmox purely an external
-  placement decision with numbering/tagging done by hand? Draft: `llm-ctl`
-  exposes a thin `/api/pve/*` read view (list containers + tags) and records the
-  `200+` / `ai` convention; full create/start/stop is a follow-up.
-- **PVE credential**: token `agent-admin` is **dev-only** and its papered usage
-  is hardcoded in config. Before anything is reachable beyond this host, swap to
-  a scoped least-privilege token/ACL and pull the secret from an env var or
-  secret store, not `~/.keys`.
-- Binary/project name: `llm-ctl` is the working title - rename freely.
+All prior "open questions" are resolved. Items marked **RESOLVED (keep)**
+need no code change; items marked **TODO** are decided behaviors to implement.
+
+- **Session binding — TODO**: bind a request to a session **by `X-Session-Id`
+  header only** (drop the "active within 30 min" heuristic). The pi extension
+  already sends its session id via `/api/session-active`.
+- **Single-client strictness — TODO**: **hard-reject** a second distinct client
+  while one turn is in flight (need a client-id / busy flag in the daemon);
+  do not fall back to llama-server's soft overlap queue.
+- **Model-not-active request — RESOLVED (keep)**: respond 404/409 with a hint.
+  The UI is the intended way to load a model.
+- **HF download granularity — TODO**: after listing a repo, **pick the wanted
+  GGUF/quant** from the file list before downloading (vs `--include '*.gguf'`).
+- **Auth — RESOLVED (keep)**: stay LAN-only, no auth. No shared token for
+  `/api/*` + `/v1/*`.
+- **PVE integration scope — RESOLVED (keep)**: **no `llm-ctl` <-> PVE
+  integration** beyond what exists (status read + CT provisioning by OpenTofu).
+  Containers are managed on the PVE side, not through the web panel. Numbering
+  (`200+`) and tag (`ai`) convention still applies via `infra/`.
+- **PVE credential — RESOLVED (keep)**: keep the dev-only `agent-admin` token
+  hardcoded in config. (Monitoring already uses the read-only `pve-mon@pve`
+  token from M10.)
+- **Binary/project name — RESOLVED (keep)**: keep `llm-ctl`.
