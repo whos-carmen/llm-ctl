@@ -41,12 +41,41 @@ pub struct RebuildManager {
 }
 
 /// One completed build attempt.
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BuildRecord {
     pub at: f64,
     pub before_sha: Option<String>,
     pub after_sha: Option<String>,
     pub ok: bool,
+}
+
+/// Path to the persisted build history (XDG state dir: ~/.local/state/llm-ctl/builds.json).
+fn history_path() -> std::path::PathBuf {
+    let base = std::env::var("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()))
+                .join(".local/state")
+        });
+    base.join("llm-ctl").join("builds.json")
+}
+
+fn load_history() -> Vec<BuildRecord> {
+    let p = history_path();
+    std::fs::read_to_string(&p)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_history(h: &[BuildRecord]) {
+    let p = history_path();
+    if let Some(dir) = p.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(h) {
+        let _ = std::fs::write(&p, json);
+    }
 }
 
 impl RebuildManager {
@@ -57,7 +86,7 @@ impl RebuildManager {
                 status: "idle".into(),
                 ..Default::default()
             })),
-            history: Arc::new(Mutex::new(Vec::new())),
+            history: Arc::new(Mutex::new(load_history())),
         }
     }
 
@@ -131,7 +160,8 @@ impl RebuildManager {
                 st.status = "failed".into();
                 st.error = Some(format!("pull_ok={pull_ok} build_ok={build_ok}"));
             }
-            // Record into the persistent history (newest first, capped).
+            // Record into the persistent history (newest first, capped), then
+            // flush to disk so it survives a daemon restart.
             {
                 let mut h = history.lock().await;
                 h.insert(0, BuildRecord {
@@ -143,6 +173,7 @@ impl RebuildManager {
                 if h.len() > 20 {
                     h.truncate(20);
                 }
+                save_history(&h);
             }
         });
         Ok(())
