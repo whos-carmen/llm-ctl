@@ -43,7 +43,7 @@ schema_migrate = true
 
 # Exactly ONE model is active at a time. autostart picks one at boot.
 [[models]]
-id          = "ling-tiny-q8"
-model       = "/home/pixie/llama/logs/Ling-3.0-tiny-Q8_0.gguf"
+id          = "lfm2.5-8b"
+model       = "/home/pixie/.cache/huggingface/hub/models--unsloth--LFM2.5-8B-A1B-GGUF/snapshots/37563684c4a625e9958906fd924e15095cf9c896/LFM2.5-8B-A1B-UD-Q5_K_XL.gguf"
 autostart   = true
-description = "Nemotron 3.5 Lightning 30B-A3B, IQ4_XS"
+description = "LFM2.5 8B A1B unsloth UD Q5_K_XL"
