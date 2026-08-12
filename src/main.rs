@@ -3,6 +3,7 @@ mod db;
 mod pve;
 mod proxy;
 mod reap;
+mod store;
 mod supervisor;
 
 use std::sync::Arc;
@@ -49,11 +50,56 @@ async fn handle_pve(State(st): State<AppState>) -> Response {
 }
 
 async fn handle_db(State(st): State<AppState>) -> Response {
-    match db::probe(&st.cfg.db.pgurl).await {
+    let store = match store::Store::connect(&st.cfg.db.pgurl).await {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "postgres_reachable": false, "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+    let res = match store.migrate().await {
+        Ok(()) => store.ping().await,
+        Err(e) => Err(e),
+    };
+    match res {
         Ok(()) => Json(json!({ "postgres_reachable": true })).into_response(),
         Err(e) => (
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "postgres_reachable": false, "error": e })),
+            Json(json!({ "postgres_reachable": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn handle_session_test(State(st): State<AppState>) -> Response {
+    let store = match store::Store::connect(&st.cfg.db.pgurl).await {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+    if let Err(e) = store.migrate().await {
+        return (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response();
+    }
+    match store
+        .record_fake_turn("m3-test-session", "lfm2.5-8b")
+        .await
+    {
+        Ok(n) => Json(json!({ "session": "m3-test-session", "turns": n })).into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({ "error": e.to_string() })),
         )
             .into_response(),
     }
@@ -92,6 +138,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/health", get(health))
         .route("/api/pve", get(handle_pve))
         .route("/api/db", get(handle_db))
+        .route("/api/session-test", get(handle_session_test))
         .fallback(proxy::fallback)
         .with_state(state);
 
