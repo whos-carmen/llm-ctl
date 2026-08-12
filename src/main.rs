@@ -21,6 +21,7 @@ use tokio::sync::Mutex;
 pub struct AppState {
     pub cfg: Arc<config::Config>,
     pub worker: Arc<Mutex<supervisor::WorkerState>>,
+    pub store: Option<Arc<store::Store>>,
 }
 
 async fn health(State(st): State<AppState>) -> Json<serde_json::Value> {
@@ -105,6 +106,24 @@ async fn handle_session_test(State(st): State<AppState>) -> Response {
     }
 }
 
+async fn handle_sessions(State(st): State<AppState>) -> Response {
+    match &st.store {
+        Some(s) => match s.list_sessions(20).await {
+            Ok(v) => Json(json!({ "sessions": v })).into_response(),
+            Err(e) => (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response(),
+        },
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "store unavailable" })),
+        )
+            .into_response(),
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -130,15 +149,31 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("no autostart model configured; worker not started");
     }
 
+    // Session store (Postgres on the ops tier). Non-fatal if unavailable.
+    let store = match store::Store::connect(&cfg.db.pgurl).await {
+        Ok(s) => {
+            if let Err(e) = s.migrate().await {
+                tracing::warn!(%e, "db migrate failed");
+            }
+            Some(Arc::new(s))
+        }
+        Err(e) => {
+            tracing::warn!(%e, "db unavailable at startup; turns won't be recorded");
+            None
+        }
+    };
+
     let state = AppState {
         cfg: cfg.clone(),
         worker,
+        store,
     };
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/pve", get(handle_pve))
         .route("/api/db", get(handle_db))
         .route("/api/session-test", get(handle_session_test))
+        .route("/api/sessions", get(handle_sessions))
         .fallback(proxy::fallback)
         .with_state(state);
 
