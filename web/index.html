@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/assets/app.css" />
 </head>
 <body class="min-h-screen bg-bg text-text font-sans text-sm">
-  <div class="max-w-[1300px] mx-auto px-6 py-4 flex flex-col gap-4">
+  <div class="max-w-6xl mx-auto px-6 py-4 flex flex-col gap-4">
 
     <!-- Header -->
     <header class="flex items-center justify-between border-b border-line pb-3">
@@ -22,27 +22,16 @@
       </div>
     </header>
 
-    <!-- Info strip: llama build + previous builds -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div class="bg-surface border border-line rounded p-3">
-        <h2 class="text-cyan tracking-widest text-xs mb-1">LLAMA</h2>
-        <div id="llama-info" class="text-xs text-dim text-cyan">—</div>
-      </div>
-      <div class="md:col-span-2 bg-surface border border-line rounded p-3">
-        <div class="flex items-center justify-between mb-1">
-          <h2 class="text-magenta tracking-widest text-xs">BUILDS</h2>
-          <span id="rebuild-sha2" class="text-xs text-faint"></span>
-        </div>
-        <div id="builds" class="text-xs text-dim">no builds yet</div>
-      </div>
-    </div>
-
-    <!-- GPU / CPU monitor (2x2, compact — lives in the left column below) -->
-
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
       <!-- Left: actions -->
       <section class="lg:col-span-2 flex flex-col gap-4">
+
+        <!-- LLAMA -->
+        <div class="bg-surface border border-line rounded p-3">
+          <h2 class="text-cyan tracking-widest text-xs mb-1">LLAMA</h2>
+          <div id="llama-info" class="text-xs text-dim text-cyan truncate">—</div>
+        </div>
 
         <!-- Models -->
         <div class="bg-surface border border-line rounded p-3">
@@ -77,6 +66,15 @@
             <span id="rebuild-sha" class="text-xs text-faint"></span>
           </div>
           <div id="rebuild-job" class="mt-2 text-xs text-dim"></div>
+        </div>
+
+        <!-- BUILDS -->
+        <div class="bg-surface border border-line rounded p-3">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="text-magenta tracking-widest text-xs">BUILDS</h2>
+            <span id="rebuild-sha2" class="text-xs text-faint"></span>
+          </div>
+          <div id="builds" class="text-xs text-dim">no builds yet</div>
         </div>
 
         <!-- GPU / CPU monitor (compact 2x2) -->
