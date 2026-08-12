@@ -76,6 +76,8 @@ function render(s) {
   $("rebuild-sha").textContent = sha ? "sha " + sha.slice(0, 40) : "";
   $("hf-repo").disabled = !!s.download && s.download.status === "running";
   $("hf-go").disabled = !!s.download && s.download.status === "running";
+  $("hf-list").disabled = !!s.download && s.download.status === "running";
+  $("hf-files").disabled = !!s.download && s.download.status === "running";
   $("rebuild-go").disabled = !!s.rebuild && s.rebuild.status === "running";
 }
 
@@ -122,6 +124,24 @@ document.addEventListener("click", (e) => {
   doAction(b.dataset.act === "start" ? `/api/models/${encodeURIComponent(id)}/start` : "/api/models/stop", b);
 });
 
+$("hf-list").addEventListener("click", async () => {
+  const repo = $("hf-repo").value.trim();
+  if (!repo) return;
+  const sel = $("hf-files");
+  sel.innerHTML = '<option value="">(loading…)</option>';
+  try {
+    const r = await api(`/api/hf/files?repo=${encodeURIComponent(repo)}`);
+    const files = r.files || [];
+    sel.innerHTML =
+      '<option value="">choose a GGUF…</option>' +
+      files.map((f) => `<option value="${esc(f.path)}">${esc(f.path)} (${f.size_mb} MB)</option>`).join("");
+    $("hf-job").textContent = files.length ? `${files.length} GGUF files` : "no .gguf files in this repo";
+  } catch (e) {
+    sel.innerHTML = '<option value="">choose a GGUF…</option>';
+    $("hf-job").textContent = "list failed: " + e.message;
+  }
+});
+
 $("hf-go").addEventListener("click", async () => {
   const repo = $("hf-repo").value.trim();
   if (!repo) return;
@@ -132,7 +152,10 @@ $("hf-go").addEventListener("click", async () => {
     await fetch("/api/hf/download", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...HDR },
-      body: JSON.stringify({ repo, include: $("hf-include").value.trim() || "*q4_k_m.gguf" }),
+      body: JSON.stringify({
+        repo,
+        include: $("hf-files").value || $("hf-include").value.trim() || "*q4_k_m.gguf",
+      }),
     });
   } catch (e) {
     console.error(e);

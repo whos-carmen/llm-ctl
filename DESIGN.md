@@ -578,8 +578,11 @@ need no code change; items marked **TODO** are decided behaviors to implement.
   turn completes (success, upstream error, or client disconnect).
 - **Model-not-active request — RESOLVED (keep)**: respond 404/409 with a hint.
   The UI is the intended way to load a model.
-- **HF download granularity — TODO**: after listing a repo, **pick the wanted
-  GGUF/quant** from the file list before downloading (vs `--include '*.gguf'`).
+- **HF download granularity — DONE**: the web panel lists a repo's GGUF files
+  (via `GET /api/hf/files?repo=…`, HF tree API, sizes shown, sorted ascending)
+  and you pick a specific file before downloading; the picked path is sent as
+  `--include`, so only that GGUF is fetched and auto-registered. Manual include
+  pattern remains as a fallback.
 - **Auth — RESOLVED (keep)**: stay LAN-only, no auth. No shared token for
   `/api/*` + `/v1/*`.
 - **PVE integration scope — RESOLVED (keep)**: **no `llm-ctl` <-> PVE

@@ -185,6 +185,12 @@ cd ~/llm-ctl && nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &
     second completion while one turn is in flight; released on completion/
     error/disconnect. Verified: 409 on overlap; header binds, body-`user`
     does not merge sessions; recovery after client disconnect works.
+- **§8 decisions — HF GGUF picker (DONE)**: `download.rs::list_files` + `GET
+  /api/hf/files?repo=…` (HF tree API, .gguf + size, sorted ascending); web
+  panel (`index.html`/`app.js`) lists a repo's GGUFs into a `<select>` and the
+  download sends the picked path as `--include` (exact file, or manual pattern
+  fallback). Verified end-to-end: picked a single small GGUF, only it was
+  fetched + auto-registered. Gated repos need auth (not implemented).
 
 Open questions live at DESIGN.md §8 (single-client strictness, auto-load vs
 404, HF quant-picking, PVE container mgmt scope, dev-token hygiene).

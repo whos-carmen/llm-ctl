@@ -38,7 +38,13 @@
           <h2 class="text-cyan tracking-widest text-xs mb-2">HF DOWNLOAD</h2>
           <div class="flex gap-2">
             <input id="hf-repo" type="text" placeholder="org/repo" class="flex-1 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan placeholder:text-faint" />
-            <input id="hf-include" type="text" placeholder="*q4_k_m.gguf" class="flex-1 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan placeholder:text-faint" />
+            <button id="hf-list" class="bg-raised border border-line text-cyan rounded px-3 py-1 hover:border-cyan">list</button>
+          </div>
+          <div class="flex gap-2 mt-2">
+            <select id="hf-files" class="flex-1 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan">
+              <option value="">choose a GGUF…</option>
+            </select>
+            <input id="hf-include" type="text" placeholder="or pattern e.g. *q4_k_m.gguf" class="flex-1 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan placeholder:text-faint" />
             <button id="hf-go" class="bg-cyan text-black font-bold rounded px-3 py-1 hover:opacity-80">↓</button>
           </div>
           <div id="hf-job" class="mt-2 text-xs text-dim"></div>

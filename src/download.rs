@@ -12,6 +12,7 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 
 const LOG_CAP: usize = 500;
+const HF_API_BASE: &str = "https://huggingface.co";
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Job {
@@ -61,6 +62,48 @@ impl DownloadManager {
 
     pub async fn job(&self) -> Job {
         self.state.lock().await.clone()
+    }
+
+    /// List a repo's GGUF files via the HF tree API, sorted by size ascending.
+    /// Returns `(path, size_bytes)` pairs. Threat: repo not found / not a model
+    /// / network failure surface as `Err` with a client-friendly message.
+    pub async fn list_files(
+        &self,
+        client: &reqwest::Client,
+        repo: &str,
+    ) -> Result<Vec<(String, u64)>, String> {
+        let url = format!("{HF_API_BASE}/api/models/{repo}/tree/main?recursive=true");
+        let resp = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("HF API unreachable: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!(
+                "HF API {} for repo '{repo}' (not found / not a model?)",
+                resp.status()
+            ));
+        }
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("bad HF API response: {e}"))?;
+        let arr = body
+            .as_array()
+            .ok_or_else(|| "unexpected HF API payload".to_string())?;
+        let mut files: Vec<(String, u64)> = arr
+            .iter()
+            .filter_map(|e| {
+                let p = e.get("path").and_then(|x| x.as_str())?;
+                if !p.ends_with(".gguf") {
+                    return None;
+                }
+                let size = e.get("size").and_then(|x| x.as_u64()).unwrap_or(0);
+                Some((p.to_string(), size))
+            })
+            .collect();
+        files.sort_by_key(|(_, s)| *s);
+        Ok(files)
     }
 
     pub async fn start(&self, req: &HfDownloadReq) -> Result<(), String> {

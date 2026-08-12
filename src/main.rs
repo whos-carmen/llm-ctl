@@ -183,6 +183,35 @@ async fn handle_hf_status(State(st): State<AppState>) -> Response {
     Json(st.download.job().await).into_response()
 }
 
+async fn handle_hf_files(
+    State(st): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let repo = params.get("repo").cloned().unwrap_or_default();
+    let repo = repo.trim().to_string();
+    if repo.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "missing repo query param" })),
+        )
+            .into_response();
+    }
+    match st.download.list_files(&st.http, &repo).await {
+        Ok(files) => {
+            let files: Vec<serde_json::Value> = files
+                .into_iter()
+                .map(|(path, size)| json!({ "path": path, "size_mb": (size as f64 / 1e6).round() }))
+                .collect();
+            Json(json!({ "repo": repo, "files": files })).into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}
+
 async fn handle_rebuild_start(State(st): State<AppState>) -> Response {
     match st.rebuild.start().await {
         Ok(()) => Json(json!({ "ok": true })).into_response(),
@@ -370,6 +399,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/models/:id/start", axum::routing::post(handle_model_start))
         .route("/models/stop", axum::routing::post(handle_model_stop))
         .route("/hf/download", axum::routing::post(handle_hf_download).get(handle_hf_status))
+        .route("/hf/files", get(handle_hf_files))
         .route("/rebuild", axum::routing::post(handle_rebuild_start).get(handle_rebuild_status))
         .route("/status-rollup", get(handle_status_rollup))
         .route("/session-active", axum::routing::post(handle_session_active))
