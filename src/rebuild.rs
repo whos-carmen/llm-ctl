@@ -36,6 +36,17 @@ impl Job {
 pub struct RebuildManager {
     llama: Llama,
     state: Arc<Mutex<Job>>,
+    /// Persistent (in-memory) record of past build attempts, newest first.
+    history: Arc<Mutex<Vec<BuildRecord>>>,
+}
+
+/// One completed build attempt.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct BuildRecord {
+    pub at: f64,
+    pub before_sha: Option<String>,
+    pub after_sha: Option<String>,
+    pub ok: bool,
 }
 
 impl RebuildManager {
@@ -46,11 +57,17 @@ impl RebuildManager {
                 status: "idle".into(),
                 ..Default::default()
             })),
+            history: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub async fn job(&self) -> Job {
         self.state.lock().await.clone()
+    }
+
+    /// Past build attempts, newest first.
+    pub async fn history(&self) -> Vec<BuildRecord> {
+        self.history.lock().await.clone()
     }
 
     pub async fn start(&self) -> Result<(), String> {
@@ -70,10 +87,11 @@ impl RebuildManager {
         let before_sha = git_sha(&self.llama.repo).await;
         {
             let mut st = self.state.lock().await;
-            st.before_sha = before_sha;
+            st.before_sha = before_sha.clone();
         }
 
         let state = self.state.clone();
+        let history = self.history.clone();
         let repo = self.llama.repo.clone();
         let remote = self.llama.git_remote.clone();
         let branch = self.llama.git_branch.clone();
@@ -105,13 +123,26 @@ impl RebuildManager {
                 st.push_line(l);
             }
             st.finished_at = Some(now());
-            st.after_sha = after_sha;
+            st.after_sha = after_sha.clone();
             if ok {
                 st.status = "ok".into();
                 st.push_line("rebuild ok; relaunch the worker to pick up the new binary".into());
             } else {
                 st.status = "failed".into();
                 st.error = Some(format!("pull_ok={pull_ok} build_ok={build_ok}"));
+            }
+            // Record into the persistent history (newest first, capped).
+            {
+                let mut h = history.lock().await;
+                h.insert(0, BuildRecord {
+                    at: now(),
+                    before_sha: before_sha,
+                    after_sha,
+                    ok,
+                });
+                if h.len() > 20 {
+                    h.truncate(20);
+                }
             }
         });
         Ok(())

@@ -76,11 +76,26 @@ function render(s) {
   renderJob("rebuild", s.rebuild, "Rebuild");
   const sha = s.rebuild && s.rebuild.after_sha ? `${s.rebuild.before_sha || ""} → ${s.rebuild.after_sha}` : (s.rebuild && s.rebuild.before_sha) || "";
   $("rebuild-sha").textContent = sha ? "sha " + sha.slice(0, 40) : "";
+  $("rebuild-sha2").textContent = sha ? sha : "";
   $("hf-repo").disabled = !!s.download && s.download.status === "running";
   $("hf-go").disabled = !!s.download && s.download.status === "running";
   $("hf-list").disabled = !!s.download && s.download.status === "running";
   $("hf-files").disabled = !!s.download && s.download.status === "running";
   $("rebuild-go").disabled = !!s.rebuild && s.rebuild.status === "running";
+
+  // llama build info + previous builds
+  const li = s.llama || {};
+  $("llama-info").textContent = `commit ${esc(li.commit)} · ${esc(li.branch)} · ${esc(li.binary)}`;
+  const blds = s.builds || [];
+  $("builds").innerHTML = blds.length
+    ? blds.map((b) => {
+        const t = b.at ? new Date(b.at * 1000).toLocaleString() : "";
+        return `<div class="flex justify-between gap-2 py-0.5 ${b.ok ? "text-lime" : "text-red"}">
+          <span>${t}</span>
+          <span class="truncate">${esc(b.before_sha || "—")} → ${esc(b.after_sha || "—")}</span>
+          <span>${b.ok ? "ok" : "failed"}</span></div>`;
+      }).join("")
+    : "no recent builds";
 }
 
 function renderJob(name, job, label) {

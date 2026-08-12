@@ -22,6 +22,21 @@
       </div>
     </header>
 
+    <!-- Info strip: llama build + previous builds -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-surface border border-line rounded p-3">
+        <h2 class="text-cyan tracking-widest text-xs mb-1">LLAMA</h2>
+        <div id="llama-info" class="text-xs text-dim text-cyan">—</div>
+      </div>
+      <div class="md:col-span-2 bg-surface border border-line rounded p-3">
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="text-magenta tracking-widest text-xs">BUILDS</h2>
+          <span id="rebuild-sha2" class="text-xs text-faint"></span>
+        </div>
+        <div id="builds" class="text-xs text-dim">no builds yet</div>
+      </div>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
       <!-- Left: actions -->
@@ -36,16 +51,18 @@
         <!-- HF download -->
         <div class="bg-surface border border-line rounded p-3">
           <h2 class="text-cyan tracking-widest text-xs mb-2">HF DOWNLOAD</h2>
-          <div class="flex gap-2">
-            <input id="hf-repo" type="text" placeholder="org/repo" class="flex-1 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan placeholder:text-faint" />
-            <button id="hf-list" class="bg-raised border border-line text-cyan rounded px-3 py-1 hover:border-cyan">list</button>
+          <div class="flex gap-2 min-w-0">
+            <input id="hf-repo" type="text" placeholder="org/repo" class="flex-1 min-w-0 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan placeholder:text-faint" />
+            <button id="hf-list" class="shrink-0 bg-raised border border-line text-cyan rounded px-3 py-1 hover:border-cyan">list</button>
           </div>
-          <div class="flex gap-2 mt-2">
-            <select id="hf-files" class="flex-1 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan">
+          <div class="flex gap-2 mt-2 min-w-0">
+            <select id="hf-files" class="flex-1 min-w-0 overflow-hidden text-ellipsis bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan">
               <option value="">choose a GGUF…</option>
             </select>
-            <input id="hf-include" type="text" placeholder="or pattern e.g. *q4_k_m.gguf" class="flex-1 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan placeholder:text-faint" />
-            <button id="hf-go" class="bg-cyan text-black font-bold rounded px-3 py-1 hover:opacity-80">↓</button>
+            <button id="hf-go" class="shrink-0 bg-cyan text-black font-bold rounded px-3 py-1 hover:opacity-80">↓ Download</button>
+          </div>
+          <div class="flex gap-2 mt-2 min-w-0">
+            <input id="hf-include" type="text" placeholder="or pattern, e.g. *q4_k_m.gguf" class="flex-1 min-w-0 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan placeholder:text-faint" />
           </div>
           <div id="hf-job" class="mt-2 text-xs text-dim"></div>
         </div>

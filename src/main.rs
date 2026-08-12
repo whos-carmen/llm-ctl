@@ -41,6 +41,30 @@ pub struct AppState {
     pub busy: Arc<AtomicBool>,
     /// Active client session hint (set by the pi extension via /api/session-active).
     pub active_session: Arc<Mutex<Option<String>>>,
+    /// Static llama build info (git commit/branch + worker binary), for the UI.
+    pub llama_info: serde_json::Value,
+}
+
+/// Read llama.cpp's current git commit/branch for the panel footer/info card.
+/// Best-effort: returns "unknown" on any failure.
+fn llama_build_info(repo: &str, binary: &str) -> serde_json::Value {
+    let commit = std::process::Command::new("git")
+        .args(["-C", repo, "rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let branch = std::process::Command::new("git")
+        .args(["-C", repo, "branch", "--show-current"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    json!({
+        "commit": commit.unwrap_or_else(|| "unknown".into()),
+        "branch": branch.filter(|b| !b.is_empty()).unwrap_or_else(|| "detached".into()),
+        "binary": binary,
+    })
 }
 
 async fn health(State(st): State<AppState>) -> Json<serde_json::Value> {
@@ -321,6 +345,8 @@ async fn handle_status_rollup(State(st): State<AppState>) -> Response {
         "sessions": sessions,
         "download": st.download.job().await,
         "rebuild": st.rebuild.job().await,
+        "llama": st.llama_info.clone(),
+        "builds": st.rebuild.history().await,
         "cross_tier": { "pve": pve, "postgres": postgres },
     }))
     .into_response()
@@ -404,6 +430,13 @@ async fn main() -> anyhow::Result<()> {
         http,
         busy: Arc::new(AtomicBool::new(false)),
         active_session: Arc::new(Mutex::new(None)),
+        llama_info: tokio::task::spawn_blocking({
+            let repo = cfg.llama.repo.clone();
+            let binary = cfg.llama.binary.clone();
+            move || llama_build_info(&repo, &binary)
+        })
+        .await
+        .unwrap_or_else(|_| json!({ "commit": "unknown", "branch": "unknown", "binary": "" })),
     };
     let api = Router::new()
         .route("/health", get(health))
