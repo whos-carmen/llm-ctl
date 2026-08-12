@@ -32,6 +32,8 @@ pub struct AppState {
     pub download: Arc<download::DownloadManager>,
     pub rebuild: Arc<rebuild::RebuildManager>,
     pub http: reqwest::Client,
+    /// Active client session hint (set by the pi extension via /api/session-active).
+    pub active_session: Arc<Mutex<Option<String>>>,
 }
 
 async fn health(State(st): State<AppState>) -> Json<serde_json::Value> {
@@ -236,6 +238,18 @@ async fn require_ctl_header(req: axum::extract::Request, next: Next) -> Response
 }
 
 /// One aggregated payload for the panel (models, worker, sessions, jobs, tier).
+/// Set the active client-session hint (pi extension reports its session id).
+async fn handle_session_active(State(st): State<AppState>, Json(body): Json<serde_json::Value>) -> Response {
+    let id = body
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty());
+    tracing::info!(id = ?id, "session-active set");
+    *st.active_session.lock().await = id;
+    Json(json!({ "ok": true })).into_response()
+}
+
 async fn handle_status_rollup(State(st): State<AppState>) -> Response {
     let worker = {
         let w = st.worker.lock().await;
@@ -344,6 +358,7 @@ async fn main() -> anyhow::Result<()> {
         download,
         rebuild,
         http: reqwest::Client::new(),
+        active_session: Arc::new(Mutex::new(None)),
     };
     let api = Router::new()
         .route("/health", get(health))
@@ -357,6 +372,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/hf/download", axum::routing::post(handle_hf_download).get(handle_hf_status))
         .route("/rebuild", axum::routing::post(handle_rebuild_start).get(handle_rebuild_status))
         .route("/status-rollup", get(handle_status_rollup))
+        .route("/session-active", axum::routing::post(handle_session_active))
         .route_layer(axum::middleware::from_fn(require_ctl_header));
 
     let app = Router::new()

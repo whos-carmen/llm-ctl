@@ -41,18 +41,6 @@ fg = "text_fg"
 bg = "thinking_bg"
 
 [[statusbar.segments]]
-type = "meter"
-value_eval = "ctx.getContextUsage()?.percent ?? 0"
-template = "{percent}% of {context_window}"
-fg = "text_fg"
-bg = "dir_bg"
-states = [
-  { gte = 75, bg = "dir_bg", fg = "alert" },
-  { gte = 50, bg = "dir_bg", fg = "warn" },
-  { gte = 0, bg = "dir_bg", fg = "ok" },
-]
-
-[[statusbar.segments]]
 type = "git"
 template = " {branch}{counts}"
 count_style = "symbol"

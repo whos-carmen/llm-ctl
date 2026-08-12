@@ -159,9 +159,18 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
         );
     }
 
-    // Session binding: client header, else "active within 30 min", else new.
+    // Session binding: X-Session-Id header > body "user" > active-session hint
+    // (pi extension reports its session id) > "active within 30 min" > new.
     let session_id = {
-        let sid = session_header;
+        let hint = st.active_session.lock().await.clone();
+        let sid = session_header
+            .or_else(|| {
+                parsed
+                    .get("user")
+                    .and_then(|u| u.as_str())
+                    .map(|s| s.to_string())
+            })
+            .or(hint);
         match &st.store {
             Some(s) => match s.resolve_session(sid.as_deref(), &model).await {
                 Ok(id) => id,

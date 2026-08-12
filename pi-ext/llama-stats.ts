@@ -67,7 +67,25 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  pi.on("session_start", async (_event, ctx) => {
+  // Tell the daemon which pi session is active so proxy-recorded turns are
+  // keyed to pi's real session (not the 30-min heuristic that merges them).
+  function reportSession(ctx: any) {
+    try {
+      const sid = ctx?.sessionManager?.getSessionId?.();
+      if (typeof sid === "string" && sid) {
+        fetch(ROLLUP_URL.replace("/status-rollup", "/session-active"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-LLM-CTL": "1" },
+          body: JSON.stringify({ id: sid }),
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("llama-stats reportSession error:", e);
+    }
+  }
+
+  pi.on("session_start", async (event, ctx) => {
+    reportSession(ctx);
     safeSetStatus(ctx, "cache -- · ctx --");
     // Let the TUI settle after loading/resuming a session before poking it.
     await new Promise((r) => setTimeout(r, 1000));
@@ -84,6 +102,15 @@ export default function (pi: ExtensionAPI) {
     if (timer) {
       clearInterval(timer);
       timer = null;
+    }
+    try {
+      fetch(ROLLUP_URL.replace("/status-rollup", "/session-active"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-LLM-CTL": "1" },
+        body: JSON.stringify({ id: "" }),
+      }).catch(() => {});
+    } catch {
+      /* ignore */
     }
   });
 }
