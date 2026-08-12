@@ -1,0 +1,49 @@
+# llm-ctl example config. Copy to ./config.toml (gitignored) and adjust.
+listen = { host = "127.0.0.1", port = 8082 }
+
+[llama]
+repo       = "/home/pixie/llama"
+build_dir  = "/home/pixie/llama/build"
+binary     = "/home/pixie/llama/build/bin/llama-server"
+git_remote = "origin"
+git_branch = "master"
+
+[worker]
+port = 8080
+# --host and --port are appended by the supervisor.
+default_args = ["-ngl", "99", "--flash-attn", "on", "-c", "131072",
+                "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1", "--metrics"]
+gpu_env = { HIP_VISIBLE_DEVICES = "0" }
+restart_on_crash = true
+max_restarts = 5
+
+[hf]
+cli = ["uvx", "hf"]
+cache = "/home/pixie/.cache/huggingface"
+autoregister = true
+
+[proxmox]
+api            = "https://192.168.4.111:8006"
+node           = "px360"
+token_id       = "agent-admin@pam!agent-admin"   # DEV token; secret read from ~/.keys
+ct_storage     = "nvme1"
+ct_tag         = "ai"
+ct_vmid_start  = 200
+
+[proxmox.cts]
+"200" = "llm-ctl-ops,192.168.7.50"
+"201" = "llm-ctl-db,192.168.7.51"
+"202" = "llm-ctl-mon,192.168.7.52"
+
+# PostgreSQL on the ops tier (CT 201). Postgres itself is installed in M3, so
+# the probe will report "refused" until then - expected.
+[db]
+pgurl = "postgres://llm_ctl:REDACTED@192.168.7.51:5432/llm_ctl"
+schema_migrate = true
+
+# Exactly ONE model is active at a time. autostart picks one at boot.
+[[models]]
+id          = "ling-tiny-q8"
+model       = "/home/pixie/llama/logs/Ling-3.0-tiny-Q8_0.gguf"
+autostart   = true
+description = "Nemotron 3.5 Lightning 30B-A3B, IQ4_XS"
