@@ -20,6 +20,12 @@ resource "proxmox_virtual_environment_container" "this" {
     type             = "debian"   # debian-13 base
   }
 
+  # NOTE: CTs were created with these feature flags; unsetting them is only
+  # allowed for root@pam (token can't), so keep them to stay in sync.
+  features {
+    nesting = true
+  }
+
   cpu {
     cores = each.value.cores
   }
