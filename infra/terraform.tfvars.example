@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars (gitignored) and fill in. The token SECRET is NOT
+# stored here - run.sh injects it from ~/.keys as TF_VAR_pve_api_token.
+
+pve_endpoint = "https://192.168.4.111:8006/"
+pve_user     = "agent-admin@pam"
+
+node_name    = "px360"
+tag          = "ai"
+datastore_id = "nvme1"
+template_file_id = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
+
+bridge  = "vmbr0"
+netmask = 22
+gateway = "192.168.4.1"
+
+ssh_public_key_file = "~/.ssh/id_ed25519.pub"
+
+# Ops-tier containers (vmid/name/ip are the source of truth - keep in sync
+# with ../DESIGN.md and the Rust daemon [proxmox.cts]).
+containers = {
+  ops = { vmid = 200, hostname = "llm-ctl-ops", ip = "192.168.7.50", cores = 2, memory = 2048, disk = 20 }
+  db  = { vmid = 201, hostname = "llm-ctl-db",  ip = "192.168.7.51", cores = 2, memory = 2048, disk = 50 }
+  mon = { vmid = 202, hostname = "llm-ctl-mon", ip = "192.168.7.52", cores = 1, memory = 1024, disk = 20 }
+}
