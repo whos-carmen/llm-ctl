@@ -1,5 +1,6 @@
 mod config;
 mod db;
+mod download;
 mod pve;
 mod proxy;
 mod reap;
@@ -23,6 +24,8 @@ pub struct AppState {
     pub worker: Arc<Mutex<supervisor::WorkerState>>,
     pub sup: Arc<supervisor::Supervisor>,
     pub store: Option<Arc<store::Store>>,
+    pub models: Arc<Mutex<Vec<config::Model>>>,
+    pub download: Arc<download::DownloadManager>,
 }
 
 async fn health(State(st): State<AppState>) -> Json<serde_json::Value> {
@@ -114,12 +117,17 @@ async fn handle_session_test(State(st): State<AppState>) -> Response {
 }
 
 async fn handle_models(State(st): State<AppState>) -> Response {
-    Json(st.sup.list(&st.cfg.models).await).into_response()
+    let ms = st.models.lock().await;
+    Json(st.sup.list(&ms).await).into_response()
 }
 
 async fn handle_model_start(State(st): State<AppState>, Path(id): Path<String>) -> Response {
-    let model = match st.cfg.models.iter().find(|m| m.id == id) {
-        Some(m) => m.clone(),
+    let model = {
+        let ms = st.models.lock().await;
+        ms.iter().find(|m| m.id == id).cloned()
+    };
+    let model = match model {
+        Some(m) => m,
         None => {
             return (
                 StatusCode::NOT_FOUND,
@@ -147,6 +155,21 @@ async fn handle_model_stop(State(st): State<AppState>) -> Response {
         )
             .into_response(),
     }
+}
+
+async fn handle_hf_download(State(st): State<AppState>, Json(req): Json<download::HfDownloadReq>) -> Response {
+    match st.download.start(&req).await {
+        Ok(()) => Json(json!({ "ok": true, "repo": req.repo })).into_response(),
+        Err(e) => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+async fn handle_hf_status(State(st): State<AppState>) -> Response {
+    Json(st.download.job().await).into_response()
 }
 
 async fn handle_sessions(State(st): State<AppState>) -> Response {
@@ -219,11 +242,17 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Runtime model registry (config models + HF auto-registered).
+    let models = Arc::new(Mutex::new(cfg.models.clone()));
+    let download = Arc::new(download::DownloadManager::new(cfg.hf.clone(), models.clone()));
+
     let state = AppState {
         cfg: cfg.clone(),
         worker,
         sup,
         store,
+        models,
+        download,
     };
     let app = Router::new()
         .route("/api/health", get(health))
@@ -234,6 +263,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/models", get(handle_models))
         .route("/api/models/:id/start", axum::routing::post(handle_model_start))
         .route("/api/models/stop", axum::routing::post(handle_model_stop))
+        .route("/api/hf/download", axum::routing::post(handle_hf_download).get(handle_hf_status))
         .fallback(proxy::fallback)
         .with_state(state);
 
