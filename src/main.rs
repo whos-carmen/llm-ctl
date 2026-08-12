@@ -243,6 +243,7 @@ async fn handle_status_rollup(State(st): State<AppState>) -> Response {
             "model": w.model_id,
             "pid": w.pid,
             "status": format!("{:?}", w.status),
+            "last_request_at": w.last_request_at,
             "slots": w.last_slots,
             "metrics": w.last_metrics,
         })

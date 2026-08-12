@@ -148,6 +148,17 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
     }
     let model = if req_model.is_empty() { active } else { req_model };
 
+    // Activity marker for idle-gating in the status bar.
+    {
+        let mut w = st.worker.lock().await;
+        w.last_request_at = Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0),
+        );
+    }
+
     // Session binding: client header, else "active within 30 min", else new.
     let session_id = {
         let sid = session_header;

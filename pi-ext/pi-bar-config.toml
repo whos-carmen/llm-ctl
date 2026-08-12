@@ -1,47 +1,92 @@
-# pi-bar config — extension statuses, isotope theme (base16-isotope / Plasma port)
+# pi-bar config - isotope theme (base16-isotope, Plasma/Konsole port)
+# NOTE: this strict TOML parser requires status states to have name+bg, rejects
+# literal [ ] inside strings, and does NOT strip trailing # comments on value
+# lines. Comments live on their own lines only.
 
 [colors]
-# base16-isotope: text #d0d0d0, lime #33ff00, magenta #ff0099, red #ff0000
 text_fg = "#d0d0d0"
+dark = "#0a0a0a"
+dir_bg = "#101010"
+model_bg = "#1a1a1a"
+thinking_bg = "#1a1a1a"
+git_bg = "#101010"
+activity_bg = "#1a1a1a"
+activity_fg = "#00ffff"
 ok = "#33ff00"
 warn = "#ff0099"
 alert = "#ff0000"
 cyan = "#00ffff"
 
-[statusbar]
+[statusbar.separators]
 leading = ""
 trailing = ""
 
-# llama-stats status: cache hit % + context % (neon text on black, colored by cache level)
+[[statusbar.segments]]
+type = "dir"
+template = " {dir}"
+fg = "text_fg"
+bg = "dir_bg"
+
+[[statusbar.segments]]
+type = "value"
+template = " {provider}:{model}"
+empty_text = "no model"
+fg = "cyan"
+bg = "model_bg"
+
+[[statusbar.segments]]
+type = "value"
+template = "{thinking}"
+show_if = "model?.reasoning"
+fg = "text_fg"
+bg = "thinking_bg"
+
+[[statusbar.segments]]
+type = "meter"
+value_eval = "ctx.getContextUsage()?.percent ?? 0"
+template = "{percent}% of {context_window}"
+fg = "text_fg"
+states = [
+  { gte = 75, bg = "alert", fg = "dark" },
+  { gte = 50, bg = "warn", fg = "dark" },
+  { gte = 0, bg = "ok", fg = "dark" },
+]
+
+[[statusbar.segments]]
+type = "git"
+template = " {branch}{counts}"
+count_style = "symbol"
+count_separator = " "
+fg = "text_fg"
+bg = "git_bg"
+
 [[statusbar.segments]]
 type = "status"
 key = "llama"
 template = " {text} "
 fg = "text_fg"
 states = [
-  { name = "high_cache", match = "cache [5-9]\\d\\.\\d%|cache 100\\.0%", fg = "ok" },
-  { name = "mid_cache", match = "cache [2-4]\\d\\.\\d%", fg = "warn" },
-  { name = "low_cache", match = "cache [01]\\.\\d%|cache --", fg = "alert" },
-  { name = "default", fg = "cyan" },
+  { name = "high_cache", match = "cache (5|6|7|8|9)|cache 100", bg = "ok", fg = "dark" },
+  { name = "mid_cache", match = "cache (2|3|4)", bg = "warn", fg = "dark" },
+  { name = "low_cache", match = "cache (0|1)|cache --", bg = "alert", fg = "dark" },
+  { name = "default", bg = "dir_bg", fg = "cyan" },
 ]
 
-# MCP connection status with color states
 [[statusbar.segments]]
 type = "status"
 key = "mcp"
 template = " {text} "
 fg = "text_fg"
 states = [
-  { name = "all_connected", match = "\\d+/\\d+\\s+server", fg = "ok" },
-  { name = "none_connected", match = "0/\\d+\\s+server", fg = "alert" },
-  { name = "partial", match = "\\d+/\\d+\\s+server", fg = "warn" },
-  { name = "default", template = "  {text} ", fg = "warn" },
+  { name = "all_connected", match = "\\d+/\\d+ server", bg = "ok", fg = "dark" },
+  { name = "none_connected", match = "0/\\d+ server", bg = "alert", fg = "dark" },
+  { name = "partial", match = "\\d+/\\d+ server", bg = "warn", fg = "dark" },
+  { name = "default", template = "  {text} ", bg = "dir_bg", fg = "cyan" },
 ]
 
-# Catch-all for any other extension statuses
 [[statusbar.segments]]
 type = "status"
 key = "*"
 template = " {text} "
 fg = "text_fg"
-states = [{ name = "default", fg = "cyan" }]
+states = [{ name = "default", bg = "dir_bg", fg = "cyan" }]

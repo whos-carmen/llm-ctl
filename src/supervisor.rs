@@ -27,6 +27,8 @@ pub struct WorkerState {
     pub started_at: Option<std::time::Instant>,
     pub restarts: u8,
     pub last_restart: Option<std::time::Instant>,
+    /// Epoch seconds of the last accepted completion (for idle gating in UIs).
+    pub last_request_at: Option<f64>,
     pub last_slots: Option<serde_json::Value>,
     pub last_metrics: Option<serde_json::Value>,
 }
@@ -42,6 +44,7 @@ impl WorkerState {
             started_at: None,
             restarts: 0,
             last_restart: None,
+            last_request_at: None,
             last_slots: None,
             last_metrics: None,
         }

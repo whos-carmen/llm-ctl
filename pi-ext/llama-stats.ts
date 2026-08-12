@@ -40,7 +40,14 @@ export default function (pi: ExtensionAPI) {
       const resp = await fetch(ROLLUP_URL, { signal: AbortSignal.timeout(2000) });
       if (!resp.ok) throw new Error(String(resp.status));
       const data = await resp.json();
-      return buildText(data?.worker?.slots);
+      const worker = data?.worker || {};
+      const last = worker.last_request_at;
+      const now = Date.now() / 1000;
+      // Only show live stats shortly after real activity; otherwise "--".
+      // (The worker slot keeps the LAST request's numbers, which is confusing
+      // when nothing has run - e.g. a fresh pi session.)
+      if (typeof last !== "number" || now - last > 60) return "cache -- · ctx --";
+      return buildText(worker?.slots);
     } catch {
       return "cache -- · ctx --";
     }
