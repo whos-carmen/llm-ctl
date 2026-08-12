@@ -6,7 +6,7 @@ pve_user     = "agent-admin@pam"
 
 node_name    = "px360"
 tag          = "ai"
-datastore_id = "nvme1"
+datastore_id = "local-lvm"
 template_file_id = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
 
 bridge  = "vmbr0"

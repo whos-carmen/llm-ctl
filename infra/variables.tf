@@ -23,7 +23,7 @@ variable "tag" {
 }
 variable "datastore_id" {
   type    = string
-  default = "nvme1"
+  default = "local-lvm"
 }
 variable "template_file_id" {
   type    = string
