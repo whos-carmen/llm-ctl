@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/assets/app.css" />
 </head>
 <body class="min-h-screen bg-bg text-text font-sans text-sm">
-  <div class="max-w-[92%] mx-auto px-4 py-4 flex flex-col gap-4">
+  <div class="max-w-[90%] mx-auto px-4 py-4 flex flex-col gap-4 overflow-x-clip">
 
     <!-- Header -->
     <header class="flex items-center justify-between border-b border-line pb-3">
@@ -22,10 +22,10 @@
       </div>
     </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 min-w-0">
 
       <!-- Left: actions -->
-      <section class="lg:col-span-2 flex flex-col gap-4">
+      <section class="lg:col-span-2 min-w-0 flex flex-col gap-4">
 
         <!-- LLAMA -->
         <div class="bg-surface border border-line rounded p-3">
@@ -104,11 +104,12 @@
       </section>
 
       <!-- Right: telemetry -->
-      <section class="lg:col-span-3 flex flex-col gap-4">
+      <section class="lg:col-span-3 min-w-0 flex flex-col gap-4">
 
         <!-- Sessions -->
-        <div class="bg-surface border border-line rounded p-3">
+        <div class="min-w-0 overflow-hidden bg-surface border border-line rounded p-3">
           <h2 class="text-purple tracking-widest text-xs mb-2">SESSIONS</h2>
+          <div class="overflow-x-auto min-w-0">
           <table class="w-full text-xs">
             <thead class="text-dim border-b border-line">
               <tr class="text-left">
@@ -122,6 +123,7 @@
             </thead>
             <tbody id="sessions"></tbody>
           </table>
+          </div>
         </div>
 
         <!-- Job log tail -->

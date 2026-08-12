@@ -283,8 +283,8 @@
   .max-w-32 {
     max-width: calc(var(--spacing) * 32);
   }
-  .max-w-\[92\%\] {
-    max-width: 92%;
+  .max-w-\[90\%\] {
+    max-width: 90%;
   }
   .min-w-0 {
     min-width: 0px;
@@ -335,6 +335,12 @@
   }
   .overflow-hidden {
     overflow: hidden;
+  }
+  .overflow-x-auto {
+    overflow-x: auto;
+  }
+  .overflow-x-clip {
+    overflow-x: clip;
   }
   .overflow-y-auto {
     overflow-y: auto;
