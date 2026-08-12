@@ -79,12 +79,8 @@ impl Supervisor {
             st.model_id = Some(model.id.clone());
         }
 
-        // Keep worker output for debugging.
-        let worker_log = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/tmp/llmctl-worker.log")
-            .map_err(anyhow::Error::msg)?;
+        // Keep worker output for debugging (user state dir, not /tmp - symlink safe).
+        let worker_log = worker_log_file()?;
         let mut cmd = TokioCommand::new(&self.binary);
         cmd.args(&self.worker.default_args)
             .arg("-m")
@@ -144,7 +140,7 @@ impl Supervisor {
                 if !pid_alive(pid) {
                     break;
                 }
-                std::thread::sleep(Duration::from_millis(500));
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
             if pid_alive(pid) {
                 let _ = Command::new("/bin/kill").arg("-KILL").arg(pid.to_string()).status();
@@ -234,8 +230,31 @@ impl Supervisor {
     }
 }
 
+/// Open the worker log under the user's XDG state dir.
+fn worker_log_file() -> anyhow::Result<std::fs::File> {
+    let base = std::env::var("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()))
+                .join(".local/state")
+        });
+    let dir = base.join("llm-ctl");
+    std::fs::create_dir_all(&dir).map_err(anyhow::Error::msg)?;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("worker.log"))
+        .map_err(anyhow::Error::msg)
+}
+
+/// True if `pid` exists AND its argv still mentions llama-server (guards
+/// against killing an unrelated process after a PID reuse).
 fn pid_alive(pid: u32) -> bool {
-    std::path::Path::new(&format!("/proc/{pid}")).exists()
+    let cmdline = match std::fs::read(format!("/proc/{pid}/cmdline")) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    String::from_utf8_lossy(&cmdline).contains("llama-server")
 }
 
 /// Parse the Prometheus text format into {name: value} for easy display.

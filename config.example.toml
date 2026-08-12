@@ -1,4 +1,9 @@
 # llm-ctl example config. Copy to ./config.toml (gitignored) and adjust.
+#
+# SECURITY POSTURE (decided 2026-08): NO auth, plain HTTP, LAN-only. This daemon
+# must NOT be reachable from outside the private network. Keep listen.host on
+# 127.0.0.1 unless you explicitly want LAN clients; if you open it to the LAN,
+# accept that any device on the network can use the API.
 listen = { host = "127.0.0.1", port = 8082 }
 
 [llama]
@@ -26,6 +31,7 @@ autoregister = true
 api            = "https://192.168.4.111:8006"
 node           = "px360"
 token_id       = "agent-admin@pam!agent-admin"   # DEV token; secret read from ~/.keys
+cert_file      = "~/.config/llm-ctl/pve-cert.pem"  # pinned PVE cert (TLS verify)
 ct_storage     = "nvme1"
 ct_tag         = "ai"
 ct_vmid_start  = 200

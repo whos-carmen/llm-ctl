@@ -28,6 +28,16 @@ struct Lxc {
     tags: String,
 }
 
+/// Expand a leading "~/" to $HOME.
+fn expand_tilde(p: &str) -> String {
+    if let Some(rest) = p.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{home}/{rest}");
+        }
+    }
+    p.to_string()
+}
+
 /// The token SECRET: env first, else ~/.keys (PROXMOX_AGENT_ADMIN).
 fn read_secret() -> Result<String> {
     if let Ok(v) = std::env::var("PROXMOX_AGENT_ADMIN") {
@@ -47,11 +57,36 @@ fn read_secret() -> Result<String> {
     bail!("PROXMOX_AGENT_ADMIN not found in ~/.keys")
 }
 
-async fn client() -> Result<reqwest::Client> {
-    Ok(reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .timeout(std::time::Duration::from_secs(8))
-        .build()?)
+async fn client(cfg: &Config) -> Result<reqwest::Client> {
+    let builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(8));
+    let builder = match &cfg.proxmox.cert_file {
+        Some(path) => {
+            // Pin the PVE cert chain: trust ONLY the certs in this file.
+            let path = expand_tilde(path);
+            let pem = std::fs::read_to_string(&path)?;
+            let mut builder = builder.tls_built_in_root_certs(false);
+            let mut found = 0usize;
+            for block in pem.split("-----BEGIN CERTIFICATE-----").skip(1) {
+                let block = format!("-----BEGIN CERTIFICATE-----{block}");
+                match reqwest::Certificate::from_pem(block.as_bytes()) {
+                    Ok(c) => {
+                        builder = builder.add_root_certificate(c);
+                        found += 1;
+                    }
+                    Err(e) => tracing::warn!(%e, "skip bad cert block in {path}"),
+                }
+            }
+            if found == 0 {
+                anyhow::bail!("no valid certificates in pinned file {path}");
+            }
+            builder
+        }
+        None => {
+            tracing::warn!("proxmox.cert_file unset; TLS verification disabled for PVE");
+            builder.danger_accept_invalid_certs(true)
+        }
+    };
+    Ok(builder.build()?)
 }
 
 /// List LXC containers on the configured node, filtered to the project tag.
@@ -59,7 +94,7 @@ pub async fn list_containers(cfg: &Config) -> Result<Vec<CtInfo>> {
     let secret = read_secret()?;
     let auth = format!("PVEAPIToken={}={}", cfg.proxmox.token_id, secret);
     let url = format!("{}/api2/json/nodes/{}/lxc", cfg.proxmox.api, cfg.proxmox.node);
-    let resp = client()
+    let resp = client(cfg)
         .await?
         .get(&url)
         .header("Authorization", auth)

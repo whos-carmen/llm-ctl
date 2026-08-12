@@ -14,6 +14,11 @@ use std::time::Instant;
 
 type BoxErr = Box<dyn std::error::Error + Send + Sync>;
 
+/// Max request body we accept from clients (LLM prompts are well under this).
+const MAX_BODY: usize = 10 * 1024 * 1024;
+/// Max buffered SSE text before we drop the partial line (defensive).
+const MAX_SSE_BUF: usize = 64 * 1024;
+
 fn ok_json(v: Value) -> AxResponse {
     AxResponse::builder()
         .status(200)
@@ -76,9 +81,9 @@ async fn forward(base: &str, req: Request<Body>) -> AxResponse {
         .unwrap_or_default();
     let url = format!("{}{}{}", base, req.uri().path(), query);
     let headers = filtered_headers(&req);
-    let body = match axum::body::to_bytes(req.into_body(), usize::MAX).await {
+    let body = match axum::body::to_bytes(req.into_body(), MAX_BODY).await {
         Ok(b) => b,
-        Err(_) => return err_json(500, "failed to read request body"),
+        Err(_) => return err_json(413, "request body too large"),
     };
     let client = reqwest::Client::new();
     let upstream = match client.request(method, &url).headers(headers).body(body).send().await {
@@ -112,9 +117,9 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
     let headers = filtered_headers(&req);
-    let body = match axum::body::to_bytes(req.into_body(), usize::MAX).await {
+    let body = match axum::body::to_bytes(req.into_body(), MAX_BODY).await {
         Ok(b) => b,
-        Err(_) => return err_json(500, "failed to read request body"),
+        Err(_) => return err_json(413, "request body too large"),
     };
     let parsed: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
@@ -377,6 +382,10 @@ async fn stream_and_record(
                         while let Some(pos) = buf.find('\n') {
                             let line: String = buf.drain(..=pos).collect();
                             col.feed(&line);
+                        }
+                        // Defensive: drop a giant partial line instead of growing forever.
+                        if buf.len() > MAX_SSE_BUF {
+                            buf.clear();
                         }
                     }
                     // Client disconnect: stop forwarding but keep draining so the

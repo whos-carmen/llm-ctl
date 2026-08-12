@@ -1,6 +1,7 @@
 //! Session/cache store on the ops tier (PostgreSQL on CT `201`).
 
 use anyhow::Result;
+use rand::Rng;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Json;
 use sqlx::PgPool;
@@ -231,11 +232,5 @@ fn cache_hit_pct(cache: i64, prompt: i64) -> f64 {
 }
 
 fn gen_session_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let n = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let p = std::process::id() as u128;
-    format!("{:012x}", (n ^ (p << 32)) & 0xFFFF_FFFF_FFFF)
+    format!("{:012x}", rand::thread_rng().gen::<u64>())
 }

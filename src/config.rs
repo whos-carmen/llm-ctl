@@ -68,6 +68,9 @@ pub struct Proxmox {
     pub ct_tag: String,
     #[serde(default)]
     pub ct_vmid_start: u16,
+    /// Optional PEM cert to pin (path). When set, TLS is verified against it.
+    #[serde(default)]
+    pub cert_file: Option<String>,
     #[serde(default)]
     pub cts: BTreeMap<String, String>,
 }
