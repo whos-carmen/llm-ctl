@@ -404,8 +404,10 @@ the ops tier.
   - **Rebuild** - current SHA, "Pull + build" button, streaming log, ready flag.
   - **Sessions** - table (id, model, requests, cache%, prompt/output tok, last
     active), click-through to per-turn breakdown with cache% + tps per turn.
-- Live updates via SSE (`/api/events`, `/api/rebuild/events`,
-  `/api/hf/download/events`), not WebSockets.
+- Live updates via **plain fetch polling** (~2.5s) of `/api/status-rollup`.
+  Deviation from earlier drafts: SSE was considered but rejected in favor of
+  polling for a single-user LAN tool (per the qwen3.7-max M9 consultation,
+  `docs/qwen-m9-consult-2026-08-12.md`).
 
 ---
 
@@ -516,9 +518,10 @@ fixed; M6-M9 can be re-ordered to taste.
    dev-only PVE token with a least-privilege credential; set a shared token for
    `/api/*` + `/v1/*`.
 
-9. **(A) Web panel.** Tailwind v4 + isotope theme; Models / HF / Rebuild /
-   Sessions views wired to `/api/*`; SSE live updates. Sessions served from
-   Postgres on `201`.
+9. **(A) Web panel - DONE (406a34e).** Tailwind v4 + isotope theme; Models /
+   HF / Rebuild / Sessions views wired to `/api/*` via `/api/status-rollup`;
+   live updates by fetch polling (SSE dropped - see SS4.8). Sessions served
+   from Postgres on `201`.
 
 10. **(A/B) Observability + hardening.** Feed llama `/metrics` + PVE guest
     metrics into `llm-ctl-mon` (202); DB backups on the ops tier; graceful

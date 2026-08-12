@@ -2,7 +2,7 @@
 
 Status snapshot for picking up in a fresh agent session. Read `DESIGN.md` in
 this repo for the full architecture; this file is the "where we are / what's
-next" handoff. Last updated 2026-08-12 (M8 hardening done; M9 = web panel).
+next" handoff. Last updated 2026-08-12 (M8.1 + M9 done; M10 = observability/hardening).
 
 ---
 
@@ -47,9 +47,11 @@ f2496dc  Initial design + OpenTofu ops-tier scaffold
 
 Untracked / not committed yet next session: `docs/CHANNEL-ISSUES.md`,
 `HANDOFF.md`. Committed so far: M2 (cf2cebc), M3 (7807395), M4 (1706aab),
-M5 (1c41931), M6 (a28b862), M7 (5498687), M8 (eef0ccd). Commits use `gh`
-identity `whos-carmen` (`87442520+whos-carmen@users.noreply.github.com`).
-Daemon runs detached (`nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &`).
+M5 (1c41931), M6 (a28b862), M7 (5498687), M8 (eef0ccd), M8.1 (d83bd6b),
+M9 (406a34e). Commits use `gh` identity `whos-carmen`
+(`87442520+whos-carmen@users.noreply.github.com`).
+Daemon runs detached (`cd ~/llm-ctl && nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &`
+- note: it serves `web/` relative to cwd, so launch from ~/llm-ctl).
 
 ## 3. Environment / tooling
 
@@ -146,6 +148,13 @@ cd ~/llm-ctl && nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &
   NO auth + plain HTTP, LAN-only** (documented in config.example). CT 200
   reverse-proxy/TLS deferred (not needed without TLS).
 - **M9** web panel (Tailwind v4 + isotope theme) wired to `/api/*`, SSE.
+- **M8.1 — DONE (d83bd6b)**: all findings from the qwen3.7-max deep review
+  fixed (shared reqwest client, transactional record_turn + unique turn index,
+  poller Starting-grace + restart_on_crash, UTF-8-safe SSE, lifecycle mutex,
+  job guards, 1s health PVE timeout, spawn_blocking, config ~ expansion).
+- **M9 — DONE (406a34e)**: web panel - Tailwind v4 + isotope theme, served by
+  the daemon at "/", `/api/status-rollup` aggregation, fetch-polling live
+  updates (SSE dropped per qwen consult), CSRF header guard, CSP headers.
 - **M10** observability into `202` + DB backups + hardening.
 
 Open questions live at DESIGN.md §8 (single-client strictness, auto-load vs
