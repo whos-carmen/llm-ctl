@@ -282,9 +282,12 @@ is SQLite-only), timestamps/timings as `TIMESTAMPTZ` / `DOUBLE PRECISION`,
 `request_messages` as `JSONB`, `response_content` as `TEXT`. The proxy-facing
 column set and the cache-hit semantics are unchanged.
 
-Session binding: a client is bound to a session by id, either client-supplied
-via `X-Session-Id` header or derived by the existing "active session within
-30 min" heuristic (drop-in compatible with today).
+Session binding: a client is bound to a session by id, in this order:
+`X-Session-Id` header > request body `user` > an active-session hint (set by
+the pi extension via `POST /api/session-active` using
+`ctx.sessionManager.getSessionId()`) > the "active session within 30 min"
+heuristic (drop-in compatible with today). The hint makes agent turns land in
+per-agent-session buckets instead of one merged session.
 
 Cache hit rate = `cache_n / (cache_n + prompt_n)` or, from usage,
 `prompt_tokens_details.cached_tokens / prompt_tokens`. Cache counts live both
