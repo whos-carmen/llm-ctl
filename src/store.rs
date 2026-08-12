@@ -59,16 +59,18 @@ impl Store {
     /// Session id: client-supplied, else a brand-new session. No implicit
     /// "recent session" reuse — sessions are bound only by the client's
     /// explicit id (X-Session-Id header or the pi /api/session-active hint).
+    /// Untrusted client ids are validated (sanitized charset/len); invalid ones
+    /// fall back to a fresh generated id rather than being stored verbatim.
     pub async fn resolve_session(&self, client_id: Option<&str>, model: &str) -> Result<String> {
         let sid = client_id
             .map(str::trim)
-            .filter(|s| !s.is_empty())
+            .filter(|s| valid_session_id(s))
             .map(String::from)
             .unwrap_or_else(gen_session_id);
         sqlx::query(
             "INSERT INTO sessions (id, created_at, updated_at, model) \
              VALUES ($1, extract(epoch from now()), extract(epoch from now()), $2) \
-             ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at",
+             ON CONFLICT (id) DO UPDATE SET model = excluded.model, updated_at = excluded.updated_at",
         )
         .bind(&sid)
         .bind(model)
@@ -81,10 +83,18 @@ impl Store {
     /// (session_id, turn_index)), and rollup - all in one transaction.
     pub async fn record_turn(&self, t: &Turn) -> Result<()> {
         let mut tx = self.pool.begin().await?;
+        // Serialize concurrent inserts for the same session so turn_index can't
+        // collide (single-active proxy usually prevents this; this hardens
+        // record_fake_turn / future endpoints). Advisory lock releases at commit.
+        let key = session_lock_key(&t.session_id);
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(key)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query(
             "INSERT INTO sessions (id, created_at, updated_at, model) \
              VALUES ($1, extract(epoch from now()), extract(epoch from now()), $2) \
-             ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at",
+             ON CONFLICT (id) DO UPDATE SET model = excluded.model, updated_at = excluded.updated_at",
         )
         .bind(&t.session_id)
         .bind(&t.request_model)
@@ -218,4 +228,22 @@ fn cache_hit_pct(cache: i64, prompt: i64) -> f64 {
 
 fn gen_session_id() -> String {
     format!("{:012x}", rand::thread_rng().gen::<u64>())
+}
+
+/// Client-supplied session ids are treated as untrusted text: allow a compact
+/// printable subset (for DB + HTML safety) and a sane length cap. Invalid ids
+/// fall back to a generated one rather than being stored verbatim.
+fn valid_session_id(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Stable 63-bit hash of a session id for pg_advisory_xact_lock.
+fn session_lock_key(sid: &str) -> i64 {
+    // FNV-1a 64-bit, masked to i64::MAX.
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in sid.bytes() {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    (h & i64::MAX as u64) as i64
 }
