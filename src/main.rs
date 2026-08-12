@@ -17,6 +17,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::json;
+use std::sync::atomic::AtomicBool;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tower_http::services::{ServeDir, ServeFile};
@@ -32,6 +33,11 @@ pub struct AppState {
     pub download: Arc<download::DownloadManager>,
     pub rebuild: Arc<rebuild::RebuildManager>,
     pub http: reqwest::Client,
+    /// Single-client busy gate (atomic, RAII-guarded in proxy.rs): true while
+    /// a completion's turn is in flight; the proxy hard-rejects (409) a second
+    /// completion until it clears. Kept out of WorkerState so the guard can
+    /// clear it synchronously on Drop (panic/cancel-safe).
+    pub busy: Arc<AtomicBool>,
     /// Active client session hint (set by the pi extension via /api/session-active).
     pub active_session: Arc<Mutex<Option<String>>>,
 }
@@ -378,6 +384,11 @@ async fn main() -> anyhow::Result<()> {
     let download = Arc::new(download::DownloadManager::new(cfg.hf.clone(), models.clone()));
     let rebuild = Arc::new(rebuild::RebuildManager::new(cfg.llama.clone()));
 
+    let http = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .expect("reqwest client builds");
     let state = AppState {
         cfg: cfg.clone(),
         worker,
@@ -386,7 +397,8 @@ async fn main() -> anyhow::Result<()> {
         models,
         download,
         rebuild,
-        http: reqwest::Client::new(),
+        http,
+        busy: Arc::new(AtomicBool::new(false)),
         active_session: Arc::new(Mutex::new(None)),
     };
     let api = Router::new()

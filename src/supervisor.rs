@@ -30,9 +30,6 @@ pub struct WorkerState {
     pub last_restart: Option<std::time::Instant>,
     /// Epoch seconds of the last accepted completion (for idle gating in UIs).
     pub last_request_at: Option<f64>,
-    /// True while a completion's turn is in flight (streaming or not). The
-    /// proxy hard-rejects a second client's completion while this is set.
-    pub in_flight: bool,
     /// Cache stats of the last recorded turn (cache_n, prompt_n, predicted_n).
     pub last_turn: Option<serde_json::Value>,
     pub last_slots: Option<serde_json::Value>,
@@ -51,7 +48,6 @@ impl WorkerState {
             restarts: 0,
             last_restart: None,
             last_request_at: None,
-            in_flight: false,
             last_turn: None,
             last_slots: None,
             last_metrics: None,

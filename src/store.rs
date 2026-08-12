@@ -39,6 +39,8 @@ impl Store {
     pub async fn connect(pgurl: &str) -> Result<Self> {
         let pool = PgPoolOptions::new()
             .max_connections(5)
+            .acquire_timeout(std::time::Duration::from_secs(5))
+            .max_lifetime(Some(std::time::Duration::from_secs(30 * 60)))
             .connect(pgurl)
             .await?;
         Ok(Self { pool })

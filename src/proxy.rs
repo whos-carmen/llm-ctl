@@ -9,10 +9,31 @@ use axum::http::{Method, Request};
 use axum::response::Response as AxResponse;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 type BoxErr = Box<dyn std::error::Error + Send + Sync>;
+
+/// RAII single-client gate. Acquiring sets an atomic `busy` to true
+/// (returns `None` if already busy -> the caller rejects with 409); dropping
+/// always clears it, so the flag can't wedge on panic/cancel/early return.
+pub struct InFlight(Arc<AtomicBool>);
+
+impl InFlight {
+    /// Try to acquire the busy gate. `None` if another completion is active.
+    fn acquire(busy: &Arc<AtomicBool>) -> Option<InFlight> {
+        busy.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+            .then(|| InFlight(busy.clone()))
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
 
 /// Max request body we accept from clients (LLM prompts are well under this).
 const MAX_BODY: usize = 10 * 1024 * 1024;
@@ -161,14 +182,10 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
 
     // Single-active-client: hard-reject a completion while another turn is in
     // flight (llama-server only serves one anyway; refuse the overlap rather
-    // than queue it). Atomic check-and-set under the worker mutex.
-    {
-        let mut w = st.worker.lock().await;
-        if w.in_flight {
-            return err_json(409, "another completion is already in flight; single-client mode");
-        }
-        w.in_flight = true;
-    }
+    // than queue it). The RAII guard clears the flag on ANY return/panic path.
+    let Some(_busy) = InFlight::acquire(&st.busy) else {
+        return err_json(409, "another completion is already in flight; single-client mode");
+    };
 
     // Session binding: client's explicit session id only. Either the
     // X-Session-Id header or (for pi, which can't set a header on /v1 calls)
@@ -178,10 +195,19 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
         let hint = st.active_session.lock().await.clone();
         let sid = session_header.or(hint);
         match &st.store {
-            Some(s) => match s.resolve_session(sid.as_deref(), &model).await {
-                Ok(id) => id,
-                Err(e) => {
+            Some(s) => match tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                s.resolve_session(sid.as_deref(), &model),
+            )
+            .await
+            {
+                Ok(Ok(id)) => id,
+                Ok(Err(e)) => {
                     tracing::warn!(%e, "session resolve failed; skipping recording");
+                    String::new()
+                }
+                Err(_) => {
+                    tracing::warn!("session resolve timed out; skipping recording");
                     String::new()
                 }
             },
@@ -200,14 +226,14 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
         .await
     {
         Ok(r) => r,
-        Err(e) => {
-            st.worker.lock().await.in_flight = false;
-            return err_json(502, &format!("upstream unreachable: {e}"));
-        }
+        Err(e) => return err_json(502, &format!("upstream unreachable: {e}")),
     };
 
     if stream {
-        stream_and_record(upstream, st.store, st.worker, session_id, model, messages, max_tokens, temperature, start).await
+        // Move the busy guard into the stream task so it is released only when
+        // the turn finishes (success, error, disconnect, panic), not when this
+        // handler returns.
+        stream_and_record(upstream, st.store, st.worker, _busy, session_id, model, messages, max_tokens, temperature, start).await
     } else {
         let status = upstream.status();
         let mut out_headers = Vec::new();
@@ -219,13 +245,14 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
         }
         let bytes = match upstream.bytes().await {
             Ok(b) => b,
-            Err(_) => {
-                st.worker.lock().await.in_flight = false;
-                return err_json(502, "upstream read failed");
-            }
+            Err(_) => return err_json(502, "upstream read failed"),
         };
-        record_from_response(&st, session_id, &model, messages, max_tokens, temperature, &bytes, start).await;
-        st.worker.lock().await.in_flight = false;
+        // Bound DB writes so a slow Postgres can't hold the single-client slot.
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            record_from_response(&st, session_id, &model, messages, max_tokens, temperature, &bytes, start),
+        )
+        .await;
         let mut builder = AxResponse::builder().status(status);
         for (k, v) in out_headers {
             builder = builder.header(k, v);
@@ -397,6 +424,7 @@ async fn stream_and_record(
     upstream: reqwest::Response,
     store: Option<Arc<Store>>,
     worker: Arc<tokio::sync::Mutex<crate::supervisor::WorkerState>>,
+    _busy: InFlight,
     session_id: String,
     model: String,
     messages: Option<Value>,
@@ -416,11 +444,34 @@ async fn stream_and_record(
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<axum::body::Bytes, BoxErr>>(64);
     let collector = Arc::new(Mutex::new(Collector::default()));
 
+    // The busy guard is moved in here and dropped when the task finishes, so it
+    // is released on success, upstream error, client disconnect, OR panic.
     tokio::spawn(async move {
         let mut stream = upstream.bytes_stream();
         let mut buf: Vec<u8> = Vec::new();
         let mut client_gone = false;
-        while let Some(chunk) = stream.next().await {
+        let idle = std::time::Duration::from_secs(30);
+        let deadline = Instant::now() + std::time::Duration::from_secs(1800);
+        loop {
+            if Instant::now() > deadline {
+                tracing::warn!("stream hit overall deadline; aborting drain");
+                break;
+            }
+            let next = tokio::time::timeout(idle, stream.next()).await;
+            let chunk = match next {
+                Ok(Some(c)) => c,
+                Ok(None) => break,   // clean EOF
+                Err(_) => {
+                    // No upstream data for `idle`: treat as a stalled worker.
+                    tracing::warn!("stream idle timeout; aborting drain");
+                    if !client_gone {
+                        let _ = tx
+                            .send(Err(std::io::Error::other("llama stream idle timeout").into()))
+                            .await;
+                    }
+                    break;
+                }
+            };
             match chunk {
                 Ok(b) => {
                     if !session_id.is_empty() {
@@ -451,7 +502,6 @@ async fn stream_and_record(
                 }
             }
         }
-        // Record the completed turn (guard dropped before the await).
         if !session_id.is_empty() {
             let turn = {
                 let col = collector.lock().unwrap();
@@ -469,11 +519,14 @@ async fn stream_and_record(
                     start.elapsed().as_secs_f64() * 1000.0,
                 )
             };
-            record_turn(&store, &worker, &turn).await;
+            // Bound the DB write so a slow Postgres can't wedge the slot.
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                record_turn(&store, &worker, &turn),
+            )
+            .await;
         }
-        // Turn done (success, upstream error, or client disconnect): release
-        // the single-client busy flag.
-        worker.lock().await.in_flight = false;
+        // `_busy` (InFlight) is dropped here -> busy flag cleared.
     });
 
     let body = Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx));
