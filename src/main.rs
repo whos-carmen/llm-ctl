@@ -352,7 +352,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         cfg: cfg.clone(),
         worker,
-        sup,
+        sup: sup.clone(),
         store,
         models,
         download,
@@ -399,6 +399,32 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{}:{}", cfg.listen.host, cfg.listen.port);
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!(addr = %addr, "llm-ctl listening");
-    axum::serve(listener, app).await?;
+
+    // Graceful shutdown: on SIGTERM/SIGINT, stop accepting new requests, let
+    // in-flight requests drain, then stop the worker (SIGTERM -> grace ->
+    // SIGKILL) and exit cleanly. Marking the supervisor as shutting down
+    // suppresses the poller's auto-restart so the worker isn't re-spawned
+    // while we try to stop it.
+    let shutdown_signal = {
+        let sup = sup.clone();
+        async move {
+            let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("install SIGTERM handler");
+            let mut int = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                .expect("install SIGINT handler");
+            tokio::select! {
+                _ = term.recv() => tracing::info!("received SIGTERM, draining"),
+                _ = int.recv() => tracing::info!("received SIGINT, draining"),
+            }
+            sup.mark_shutting_down();
+        }
+    };
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
+
+    // In-flight requests drained; terminate the llama worker cleanly.
+    sup.stop().await?;
+    tracing::info!("llm-ctl stopped cleanly");
     Ok(())
 }

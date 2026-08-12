@@ -2,7 +2,7 @@
 
 Status snapshot for picking up in a fresh agent session. Read `DESIGN.md` in
 this repo for the full architecture; this file is the "where we are / what's
-next" handoff. Last updated 2026-08-12 (M8.1 + M9 done; M10 = observability/hardening).
+next" handoff. Last updated 2026-08-12 (M8.1 + M9 + M10 done; M11 = next).
 
 ---
 
@@ -160,7 +160,23 @@ cd ~/llm-ctl && nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &
 - **M9 — DONE (406a34e)**: web panel - Tailwind v4 + isotope theme, served by
   the daemon at "/", `/api/status-rollup` aggregation, fetch-polling live
   updates (SSE dropped per qwen consult), CSRF header guard, CSP headers.
-- **M10** observability into `202` + DB backups + hardening.
+- **M10 — DONE**: observability on `202` + DB backups + hardening.
+  - `202` (llm-ctl-mon, 192.168.7.52): Prometheus + node_exporter +
+    prometheus-pve-exporter (`infra/mon/`). Scrapes llama `/metrics` via nginx
+    on `200`, node on itself, PVE guest metrics via a read-only `pve-mon@pve`
+    token (PVEAuditor, **global/privsep=0** — a privsep token 403s on
+    `/cluster/status`). Prometheus UI `http://192.168.7.52:9090`, 7d retention,
+    exporters on 127.0.0.1. All 3 Prometheus targets verified up; pve_up shows
+    lxc/200,201,202.
+  - `201` DB backups (`infra/db/backup.sh` + `/etc/cron.d/llm-ctl-backup`):
+    atomic `pg_dump -Fc` daily 02:17 as postgres to `/var/backups/llm_ctl/`,
+    14-day retention, verified restorable into a scratch DB. Log
+    `/var/log/llm-ctl-backup.log` must be postgres-writable (pre-created).
+  - Daemon hardening (`src/main.rs` + `src/supervisor.rs`): SIGTERM/SIGINT
+    graceful shutdown — drain in-flight, then stop the llama worker via the
+    existing SIGTERM->grace->SIGKILL path, no orphan, exit 0. Restart caps +
+    `LLM_CTL_CONFIG` env override were already present (verified). Both signal
+    paths tested clean.
 
 Open questions live at DESIGN.md §8 (single-client strictness, auto-load vs
 404, HF quant-picking, PVE container mgmt scope, dev-token hygiene).

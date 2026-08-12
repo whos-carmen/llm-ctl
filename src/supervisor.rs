@@ -3,6 +3,7 @@
 use crate::config::{Model, Worker};
 use anyhow::Result;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command as TokioCommand;
@@ -61,6 +62,9 @@ pub struct Supervisor {
     client: reqwest::Client,
     /// Serializes the spawn/stop/switch lifecycle (TOCTOU guard).
     lifecycle: Mutex<()>,
+    /// Set by the graceful-shutdown path to suppress worker restarts while the
+    /// daemon drains and stops the child.
+    shutting_down: AtomicBool,
 }
 
 impl Supervisor {
@@ -71,7 +75,18 @@ impl Supervisor {
             state,
             client: reqwest::Client::new(),
             lifecycle: Mutex::new(()),
+            shutting_down: AtomicBool::new(false),
         }
+    }
+
+    /// Signal that the daemon is shutting down: the poller must not restart a
+    /// Crashed worker (otherwise it could re-spawn right as we try to stop it).
+    pub fn mark_shutting_down(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
+    }
+
+    fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::SeqCst)
     }
 
     fn health_url(&self) -> String {
@@ -232,6 +247,9 @@ impl Supervisor {
     /// Restart a Crashed worker when restart_on_crash allows (5s cooldown,
     /// max_restarts cap). Returns true if a restart was triggered.
     pub async fn maybe_restart(&self) -> bool {
+        if self.is_shutting_down() {
+            return false;
+        }
         let (want, model) = {
             let st = self.state.lock().await;
             let want = self.worker.restart_on_crash

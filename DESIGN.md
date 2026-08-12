@@ -527,9 +527,17 @@ fixed; M6-M9 can be re-ordered to taste.
    live updates by fetch polling (SSE dropped - see SS4.8). Sessions served
    from Postgres on `201`.
 
-10. **(A/B) Observability + hardening.** Feed llama `/metrics` + PVE guest
-    metrics into `llm-ctl-mon` (202); DB backups on the ops tier; graceful
-    shutdown (SIGTERM worker on daemon exit), restart caps, env overrides.
+10. **(A/B) Observability + hardening - DONE.** Prometheus + node_exporter +
+    prometheus-pve-exporter on `202` (`infra/mon/`): scrape llama `/metrics` via
+    nginx on `200` (`http://192.168.7.50/metrics`, no firewall change), the CT's
+    own node metrics, and PVE guest metrics through a read-only `pve-mon@pve`
+    token (`PVEAuditor`, global/privsep=0 - a privsep token 403s on
+    `/cluster/status`). Prometheus UI on `:9090`, 7d retention, exporters on
+    `127.0.0.1`. DB backups on `201` (`infra/db/`): atomic `pg_dump -Fc` daily
+    02:17 as `postgres`, 14-day retention, restore-verified. Daemon
+    hardening: SIGTERM/SIGINT graceful shutdown (drain in-flight, then stop the
+    llama worker via SIGTERM->grace->SIGKILL, no orphan, exit 0); restart caps +
+    `LLM_CTL_CONFIG` env override already present (verified).
 
 ### Infra as code / version control
 

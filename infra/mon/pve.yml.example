@@ -1,0 +1,12 @@
+# prometheus-pve-exporter config. Copied to /etc/prometheus/pve.yml on CT 202
+# by setup.sh with the REAL token value injected (0600, root-owned). Keep this
+# file a placeholder - never commit a real secret.
+#
+# Uses the read-only `pve-mon@pve` token (PVEAuditor) created during setup; the
+# admin dev token never leaves the workstation. verify_ssl is disabled because
+# PVE uses a self-signed CA (dev LAN only; llm-ctl itself CA-pins).
+default:
+  user: pve-mon@pve
+  token_name: monitor
+  token_value: REPLACED_BY_SETUP_SH
+  verify_ssl: false

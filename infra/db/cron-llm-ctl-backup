@@ -1,0 +1,5 @@
+# llm-ctl DB backup on CT 201: daily 02:17 as the postgres user (owns the
+# pg cluster). Deployed to /etc/cron.d/llm-ctl-backup.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+17 2 * * * postgres /usr/local/sbin/llm-ctl-backup.sh >> /var/log/llm-ctl-backup.log 2>&1
