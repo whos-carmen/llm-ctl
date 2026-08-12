@@ -2,7 +2,7 @@
 
 Status snapshot for picking up in a fresh agent session. Read `DESIGN.md` in
 this repo for the full architecture; this file is the "where we are / what's
-next" handoff. Last updated 2026-08-12 (M5 done; M6 = HF download job).
+next" handoff. Last updated 2026-08-12 (M6 done; M7 = rebuild job).
 
 ---
 
@@ -47,7 +47,7 @@ f2496dc  Initial design + OpenTofu ops-tier scaffold
 
 Untracked / not committed yet next session: `docs/CHANNEL-ISSUES.md`,
 `HANDOFF.md`. Committed so far: M2 (cf2cebc), M3 (7807395), M4 (1706aab),
-M5 (next commit). Commits use `gh` identity `whos-carmen`
+M5 (1c41931), M6 (a28b862). Commits use `gh` identity `whos-carmen`
 (`87442520+whos-carmen@users.noreply.github.com`).
 Daemon runs detached (`nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &`).
 
@@ -133,7 +133,9 @@ cd ~/llm-ctl && nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &
 - **M5 — DONE**: supervisor lifecycle — health poll `Starting -> Ready` (or
   Crashed), stop/switch via `POST /api/models/:id/start` + `/api/models/stop`,
   `/slots` + `/metrics` polled (2s) and exposed in `/api/health`.
-- **M6** HF download job (`uvx hf download`), live log, auto-register; cache local.
+- **M6 — DONE (a28b862)**: HF download job (`uvx hf download`) with live tail
+  log + auto-register into the runtime model list; verified with Qwen2.5-0.5B
+  (download -> register -> switch -> completion).
 - **M7** rebuild job (git pull + cmake build) with streaming log + non-disruptive swap.
 - **M8** reverse-proxy/TLS public face on CT `200`; replace dev-only token,
   add shared API token.
