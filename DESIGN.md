@@ -593,3 +593,10 @@ need no code change; items marked **TODO** are decided behaviors to implement.
   hardcoded in config. (Monitoring already uses the read-only `pve-mon@pve`
   token from M10.)
 - **Binary/project name — RESOLVED (keep)**: keep `llm-ctl`.
+
+A full architecture + deep code review (qwen3.8-max) was done 2026-08-12;
+findings and the 5-part fix set are recorded in `docs/qwen-full-review-2026-08-12.md`
+(commits `b9255e5`…`aa42624`): supervisor concurrency, panic-safe proxy busy
+gate/timeouts, job pipe-deadlock + watchdog, store turn_index/session-id,
+and security blast-radius (PVE TLS fail-closed, panel XSS, nginx CSP + /metrics
+allowlist).

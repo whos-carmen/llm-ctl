@@ -2,7 +2,8 @@
 
 Status snapshot for picking up in a fresh agent session. Read `DESIGN.md` in
 this repo for the full architecture; this file is the "where we are / what's
-next" handoff. Last updated 2026-08-12 (M8.1 + M9 + M10 done; §8 decisions implemented).
+next" handoff. Last updated 2026-08-12 (M8.1–M10 + all §8 decisions + full
+qwen3.8-max review fix set done).
 
 ---
 
@@ -191,6 +192,22 @@ cd ~/llm-ctl && nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &
   download sends the picked path as `--include` (exact file, or manual pattern
   fallback). Verified end-to-end: picked a single small GGUF, only it was
   fetched + auto-registered. Gated repos need auth (not implemented).
+- **Full review + fix set (DONE)**: `docs/qwen-full-review-2026-08-12.md`
+  (qwen3.8-max, 3 slices: arch/concurrency/security). All findings fixed:
+  - M-fix-1 `b9255e5` supervisor: restart cap (reset only on intentional
+    switch), spawn failure marks Crashed, lifecycle serialized.
+  - M-fix-2 `2c2854d` proxy: panic-safe `Arc<AtomicBool>` busy + RAII
+    `InFlight` guard (moved into stream task); timeouts on resolve_session/
+    record_turn/SSE-drain + pool acquire_timeout.
+  - M-fix-3 `374333d` jobs: concurrent stdout/stderr reads (new `src/collect.rs`
+    capped `LineSink`), 30-min watchdog kills hung child; reap matches
+    `/proc/<pid>/comm` (not cmdline) and runs off the async runtime.
+  - M-fix-4 `ffc20c3` store: advisory-xact-lock on turn_index; session upsert
+    updates model; X-Session-Id validated `^[A-Za-z0-9_-]{1,64}$`.
+  - M-fix-5 `aa42624` security: PVE TLS fail-closed (no
+    danger_accept_invalid_certs), https-only api, robust PEM parse, ~/.keys
+    perms warn; panel numeric fields coerced (XSS); nginx CSP/security headers +
+    `/metrics` allowed only to .52.
 
 Open questions live at DESIGN.md §8 (single-client strictness, auto-load vs
 404, HF quant-picking, PVE container mgmt scope, dev-token hygiene).
