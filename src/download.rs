@@ -51,7 +51,10 @@ impl DownloadManager {
     pub fn new(cfg: Hf, models: Arc<Mutex<Vec<Model>>>) -> Self {
         Self {
             cfg,
-            state: Arc::new(Mutex::new(Job::default())),
+            state: Arc::new(Mutex::new(Job {
+                status: "idle".into(),
+                ..Default::default()
+            })),
             models,
         }
     }

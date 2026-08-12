@@ -42,7 +42,10 @@ impl RebuildManager {
     pub fn new(llama: Llama) -> Self {
         Self {
             llama,
-            state: Arc::new(Mutex::new(Job::default())),
+            state: Arc::new(Mutex::new(Job {
+                status: "idle".into(),
+                ..Default::default()
+            })),
         }
     }
 

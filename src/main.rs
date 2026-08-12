@@ -11,13 +11,16 @@ mod supervisor;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
+use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -211,6 +214,66 @@ async fn handle_sessions(State(st): State<AppState>) -> Response {
     }
 }
 
+/// Lightweight CSRF guard for /api POSTs: require the X-LLM-CTL header that the
+/// panel always sends (trivial to bypass for a determined attacker, but it
+/// blocks cross-origin form POSTs from random websites on the LAN).
+async fn require_ctl_header(req: axum::extract::Request, next: Next) -> Response {
+    if req.method() == axum::http::Method::POST {
+        let ok = req
+            .headers()
+            .get("x-llm-ctl")
+            .and_then(|v| v.to_str().ok())
+            == Some("1");
+        if !ok {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "missing X-LLM-CTL header" })),
+            )
+                .into_response();
+        }
+    }
+    next.run(req).await
+}
+
+/// One aggregated payload for the panel (models, worker, sessions, jobs, tier).
+async fn handle_status_rollup(State(st): State<AppState>) -> Response {
+    let worker = {
+        let w = st.worker.lock().await;
+        json!({
+            "model": w.model_id,
+            "pid": w.pid,
+            "status": format!("{:?}", w.status),
+            "slots": w.last_slots,
+            "metrics": w.last_metrics,
+        })
+    };
+    let models = {
+        let ms = st.models.lock().await;
+        st.sup.list(&ms).await
+    };
+    let sessions = match &st.store {
+        Some(s) => s.list_sessions(20).await.unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let pve = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        pve::list_containers(&st.cfg),
+    )
+    .await
+    .map(|r| r.is_ok())
+    .unwrap_or(false);
+    let postgres = db::probe(&st.cfg.db.pgurl).await.is_ok();
+    Json(json!({
+        "worker": worker,
+        "models": models,
+        "sessions": sessions,
+        "download": st.download.job().await,
+        "rebuild": st.rebuild.job().await,
+        "cross_tier": { "pve": pve, "postgres": postgres },
+    }))
+    .into_response()
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -280,17 +343,38 @@ async fn main() -> anyhow::Result<()> {
         rebuild,
         http: reqwest::Client::new(),
     };
+    let api = Router::new()
+        .route("/health", get(health))
+        .route("/pve", get(handle_pve))
+        .route("/db", get(handle_db))
+        .route("/session-test", get(handle_session_test))
+        .route("/sessions", get(handle_sessions))
+        .route("/models", get(handle_models))
+        .route("/models/:id/start", axum::routing::post(handle_model_start))
+        .route("/models/stop", axum::routing::post(handle_model_stop))
+        .route("/hf/download", axum::routing::post(handle_hf_download).get(handle_hf_status))
+        .route("/rebuild", axum::routing::post(handle_rebuild_start).get(handle_rebuild_status))
+        .route("/status-rollup", get(handle_status_rollup))
+        .route_layer(axum::middleware::from_fn(require_ctl_header));
+
     let app = Router::new()
-        .route("/api/health", get(health))
-        .route("/api/pve", get(handle_pve))
-        .route("/api/db", get(handle_db))
-        .route("/api/session-test", get(handle_session_test))
-        .route("/api/sessions", get(handle_sessions))
-        .route("/api/models", get(handle_models))
-        .route("/api/models/:id/start", axum::routing::post(handle_model_start))
-        .route("/api/models/stop", axum::routing::post(handle_model_stop))
-        .route("/api/hf/download", axum::routing::post(handle_hf_download).get(handle_hf_status))
-        .route("/api/rebuild", axum::routing::post(handle_rebuild_start).get(handle_rebuild_status))
+        .nest("/api", api)
+        .route_service("/", ServeFile::new("web/index.html"))
+        .nest_service("/assets", ServeDir::new("web/assets"))
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+            ),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
         .fallback(proxy::fallback)
         .with_state(state);
 

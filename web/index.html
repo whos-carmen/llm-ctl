@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" class="bg-bg text-text">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>llm-ctl</title>
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body class="min-h-screen bg-bg text-text font-mono text-sm">
+  <div class="max-w-6xl mx-auto p-4 flex flex-col gap-4">
+
+    <!-- Header -->
+    <header class="flex items-center justify-between border-b border-line pb-3">
+      <div class="flex items-center gap-3">
+        <h1 class="text-cyan font-bold tracking-widest text-lg">llm-ctl</h1>
+        <span id="worker-dot" class="inline-block w-2.5 h-2.5 rounded-full bg-faint"></span>
+        <span id="worker-status" class="text-dim">—</span>
+      </div>
+      <div class="flex gap-4 text-dim">
+        <span id="pve-status" class="text-faint">pve —</span>
+        <span id="pg-status" class="text-faint">pg —</span>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+
+      <!-- Left: actions -->
+      <section class="lg:col-span-2 flex flex-col gap-4">
+
+        <!-- Models -->
+        <div class="bg-surface border border-line rounded p-3">
+          <h2 class="text-lime tracking-widest text-xs mb-2">MODELS</h2>
+          <div id="models" class="flex flex-col gap-2"></div>
+        </div>
+
+        <!-- HF download -->
+        <div class="bg-surface border border-line rounded p-3">
+          <h2 class="text-cyan tracking-widest text-xs mb-2">HF DOWNLOAD</h2>
+          <div class="flex gap-2">
+            <input id="hf-repo" type="text" placeholder="org/repo" class="flex-1 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan placeholder:text-faint" />
+            <input id="hf-include" type="text" placeholder="*q4_k_m.gguf" class="flex-1 bg-raised border border-line rounded px-2 py-1 text-text outline-none focus:border-cyan placeholder:text-faint" />
+            <button id="hf-go" class="bg-cyan text-black font-bold rounded px-3 py-1 hover:opacity-80">↓</button>
+          </div>
+          <div id="hf-job" class="mt-2 text-xs text-dim"></div>
+        </div>
+
+        <!-- Rebuild -->
+        <div class="bg-surface border border-line rounded p-3">
+          <h2 class="text-magenta tracking-widest text-xs mb-2">REBUILD</h2>
+          <div class="flex items-center gap-2">
+            <button id="rebuild-go" class="border border-magenta text-magenta font-bold rounded px-3 py-1 hover:bg-magenta hover:text-black">Rebuild llama.cpp</button>
+            <span id="rebuild-sha" class="text-xs text-faint"></span>
+          </div>
+          <div id="rebuild-job" class="mt-2 text-xs text-dim"></div>
+        </div>
+      </section>
+
+      <!-- Right: telemetry -->
+      <section class="lg:col-span-3 flex flex-col gap-4">
+
+        <!-- Sessions -->
+        <div class="bg-surface border border-line rounded p-3">
+          <h2 class="text-purple tracking-widest text-xs mb-2">SESSIONS</h2>
+          <table class="w-full text-xs">
+            <thead class="text-dim border-b border-line">
+              <tr class="text-left">
+                <th class="py-1 pr-2">session</th>
+                <th class="py-1 pr-2">model</th>
+                <th class="py-1 pr-2 text-right">reqs</th>
+                <th class="py-1 pr-2 text-right">prompt</th>
+                <th class="py-1 pr-2 text-right">out</th>
+                <th class="py-1 text-right">cache%</th>
+              </tr>
+            </thead>
+            <tbody id="sessions"></tbody>
+          </table>
+        </div>
+
+        <!-- Job log tail -->
+        <div class="bg-surface border border-line rounded p-3 flex-1 min-h-48">
+          <h2 class="text-cyan tracking-widest text-xs mb-2">JOB LOG</h2>
+          <pre id="joblog" class="bg-bg border border-line rounded p-2 h-64 overflow-y-auto text-xs text-text whitespace-pre-wrap break-all"></pre>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

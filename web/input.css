@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* Scan locations for classes (Tailwind v4, CSS-first config) */
+@source "./**/*.html";
+@source "./**/*.js";
+
+@theme {
+  /* base16-isotope (Plasma/Konsole port) */
+  --color-bg: #0a0a0a;        /* near-black */
+  --color-surface: #101010;   /* window */
+  --color-raised: #1a1a1a;    /* view/button */
+  --color-raised2: #1c1c1c;   /* alternate rows */
+  --color-line: #3c3c3c;      /* borders */
+  --color-text: #d0d0d0;      /* foreground */
+  --color-dim: #808080;       /* foreground dim */
+  --color-faint: #6b6b6b;     /* muted */
+  --color-strong: #ffffff;
+
+  --color-cyan: #00ffff;      /* brand/active */
+  --color-lime: #33ff00;      /* success/ready */
+  --color-magenta: #ff0099;   /* warning */
+  --color-red: #ff0000;       /* error */
+  --color-blue: #0066ff;      /* selection/link */
+  --color-purple: #cc00ff;    /* shell/aux */
+
+  --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* thin scrollbars to match the theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3c3c3c #0a0a0a;
+}
