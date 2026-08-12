@@ -20,10 +20,6 @@ resource "proxmox_virtual_environment_container" "this" {
     type             = "debian"   # debian-13 base
   }
 
-  features {
-    nesting = true
-  }
-
   cpu {
     cores = each.value.cores
   }
