@@ -46,10 +46,13 @@ pub struct DownloadManager {
     cfg: Hf,
     state: Arc<Mutex<Job>>,
     models: Arc<Mutex<Vec<Model>>>,
+    /// Path to config.toml so auto-registered models can be persisted across
+    /// restarts (the in-memory registry alone would lose them on restart).
+    config_path: Option<String>,
 }
 
 impl DownloadManager {
-    pub fn new(cfg: Hf, models: Arc<Mutex<Vec<Model>>>) -> Self {
+    pub fn new(cfg: Hf, models: Arc<Mutex<Vec<Model>>>, config_path: Option<String>) -> Self {
         Self {
             cfg,
             state: Arc::new(Mutex::new(Job {
@@ -57,6 +60,7 @@ impl DownloadManager {
                 ..Default::default()
             })),
             models,
+            config_path,
         }
     }
 
@@ -150,6 +154,7 @@ impl DownloadManager {
         let models = self.models.clone();
         let cache = self.cfg.cache.clone();
         let repo = req.repo.clone();
+        let config_path = self.config_path.clone();
 
         tokio::spawn(async move {
             // Read stdout+stderr CONCURRENTLY into one capped sink (a child that
@@ -198,12 +203,20 @@ impl DownloadManager {
                         let id = derive_id(&path);
                         let mut ms = models.lock().await;
                         if !ms.iter().any(|m| m.id == id) {
+                            let desc = format!("hf: {repo}");
+                            let cfg = config_path.clone();
                             ms.push(Model {
                                 id: id.clone(),
-                                model: path,
+                                model: path.clone(),
                                 autostart: false,
-                                description: format!("hf: {repo}"),
+                                description: desc.clone(),
                             });
+                            // Persist so the model survives a daemon restart.
+                            if let Some(cp) = cfg {
+                                if let Err(e) = persist_model(&cp, &id, &path, &desc) {
+                                    tracing::warn!(%e, "failed to persist model to config");
+                                }
+                            }
                             st.push_line(format!("registered model '{id}'"));
                         }
                         st.status = "ok".into();
@@ -276,4 +289,22 @@ fn derive_id(path: &str) -> String {
     } else {
         id
     }
+}
+
+/// Append a `[[models]]` entry to config.toml if this model id isn't already
+/// there, so auto-registered downloads survive a daemon restart. Keeps the
+/// file's hand-edited formatting (simple textual append).
+fn persist_model(config_path: &str, id: &str, path: &str, desc: &str) -> std::io::Result<()> {
+    let existing = std::fs::read_to_string(config_path).unwrap_or_default();
+    let needle = format!("id = \"{id}\"");
+    if existing.contains(&needle) {
+        return Ok(()); // already registered in config
+    }
+    let block = format!(
+        "\n[[models]]\nid          = \"{id}\"\nmodel       = \"{path}\"\nautostart   = false\ndescription = \"{desc}\"\n"
+    );
+    let mut f = std::fs::OpenOptions::new().append(true).open(config_path)?;
+    use std::io::Write;
+    f.write_all(block.as_bytes())?;
+    Ok(())
 }

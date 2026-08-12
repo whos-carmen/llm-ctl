@@ -278,14 +278,14 @@
   .w-full {
     width: 100%;
   }
-  .max-w-6xl {
-    max-width: var(--container-6xl);
-  }
   .max-w-24 {
     max-width: calc(var(--spacing) * 24);
   }
   .max-w-32 {
     max-width: calc(var(--spacing) * 32);
+  }
+  .max-w-\[95\%\] {
+    max-width: 95%;
   }
   .min-w-0 {
     min-width: 0px;
@@ -410,9 +410,6 @@
   }
   .px-3 {
     padding-inline: calc(var(--spacing) * 3);
-  }
-  .px-6 {
-    padding-inline: calc(var(--spacing) * 6);
   }
   .py-0\.5 {
     padding-block: calc(var(--spacing) * 0.5);

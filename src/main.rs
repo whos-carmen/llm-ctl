@@ -433,7 +433,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Runtime model registry (config models + HF auto-registered).
     let models = Arc::new(Mutex::new(cfg.models.clone()));
-    let download = Arc::new(download::DownloadManager::new(cfg.hf.clone(), models.clone()));
+    let download = Arc::new(download::DownloadManager::new(cfg.hf.clone(), models.clone(), Some(cfg_path.clone())));
     let rebuild = Arc::new(rebuild::RebuildManager::new(cfg.llama.clone()));
 
     let http = reqwest::Client::builder()
