@@ -1,0 +1,47 @@
+# pi-bar config — extension statuses, isotope theme (base16-isotope / Plasma port)
+
+[colors]
+# base16-isotope: text #d0d0d0, lime #33ff00, magenta #ff0099, red #ff0000
+text_fg = "#d0d0d0"
+ok = "#33ff00"
+warn = "#ff0099"
+alert = "#ff0000"
+cyan = "#00ffff"
+
+[statusbar]
+leading = ""
+trailing = ""
+
+# llama-stats status: cache hit % + context % (neon text on black, colored by cache level)
+[[statusbar.segments]]
+type = "status"
+key = "llama"
+template = " {text} "
+fg = "text_fg"
+states = [
+  { name = "high_cache", match = "cache [5-9]\\d\\.\\d%|cache 100\\.0%", fg = "ok" },
+  { name = "mid_cache", match = "cache [2-4]\\d\\.\\d%", fg = "warn" },
+  { name = "low_cache", match = "cache [01]\\.\\d%|cache --", fg = "alert" },
+  { name = "default", fg = "cyan" },
+]
+
+# MCP connection status with color states
+[[statusbar.segments]]
+type = "status"
+key = "mcp"
+template = " {text} "
+fg = "text_fg"
+states = [
+  { name = "all_connected", match = "\\d+/\\d+\\s+server", fg = "ok" },
+  { name = "none_connected", match = "0/\\d+\\s+server", fg = "alert" },
+  { name = "partial", match = "\\d+/\\d+\\s+server", fg = "warn" },
+  { name = "default", template = "  {text} ", fg = "warn" },
+]
+
+# Catch-all for any other extension statuses
+[[statusbar.segments]]
+type = "status"
+key = "*"
+template = " {text} "
+fg = "text_fg"
+states = [{ name = "default", fg = "cyan" }]

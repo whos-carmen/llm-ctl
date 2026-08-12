@@ -180,6 +180,14 @@ Open questions live at DESIGN.md §8 (single-client strictness, auto-load vs
   only run it when you intend it to own the worker.
 - **dev token:** PVE token `agent-admin` is dev-only; rotate to least-privilege
   before anything leaves localhost.
+- **Local pi client:** `pi` (Node CLI) runs under `t-pi` (tmux session `pi`) with
+  its `llamacpp` provider pointed at the proxy
+  (`~/.pi/agent/models.json` -> `http://localhost:8082/v1`, model `lfm2.5-8b`).
+  The `llama-stats.ts` pi extension (repo: `pi-ext/`) polls `/api/status-rollup`
+  and publishes cache% + ctx% to pi-bar's `llama` status segment; pi-bar config
+  is `~/.pi/pi-bar/config.toml` (copy in `pi-ext/pi-bar-config.toml`), isotope
+  colors. Note: llama.cpp reports reused tokens as
+  `n_prompt_tokens - n_prompt_tokens_processed` (not `n_prompt_tokens_cache`).
 - **LAN-open, no auth:** the LAN face is nginx on CT 200 (`http://192.168.7.50/` ->
   panel, `/api` + `/v1` -> `192.168.7.23:8082`; config `infra/nginx/llm-ctl-ops.conf`).
   The workstation's 8082 is **firewalled to only 192.168.7.50** (`infra/firewall-llmctl.nft`,
