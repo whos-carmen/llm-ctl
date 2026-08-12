@@ -182,7 +182,8 @@ Open questions live at DESIGN.md §8 (single-client strictness, auto-load vs
   before anything leaves localhost.
 - **LAN-open, no auth:** the LAN face is nginx on CT 200 (`http://192.168.7.50/` ->
   panel, `/api` + `/v1` -> `192.168.7.23:8082`; config `infra/nginx/llm-ctl-ops.conf`).
-  ANY device on the LAN can drive the API. `/api` POSTs need `X-LLM-CTL: 1`
-  (CSRF guard; the panel sends it, and it survives the nginx hop). To lock down
-  further: restrict nginx to specific clients, or bind llm-ctl back to 127.0.0.1
-  + `ssh -L 8082:127.0.0.1:8082 <host>` for direct access.
+  The workstation's 8082 is **firewalled to only 192.168.7.50** (`infra/firewall-llmctl.nft`,
+  live in nftables + persisted via /etc/nftables.conf/nftables.service); other LAN
+  devices get no direct access. ANY device can still use the API **via the nginx
+  face** (no auth there). `/api` POSTs need `X-LLM-CTL: 1` (CSRF guard; survives
+  the nginx hop).

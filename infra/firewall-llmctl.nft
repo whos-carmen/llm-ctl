@@ -1,0 +1,11 @@
+#!/usr/sbin/nft -f
+# llm-ctl LAN face: only the Proxmox reverse proxy (192.168.7.50, CT 200) may
+# reach port 8082 on this host. Everything else is policy-accept.
+table inet llmctl {
+  chain input {
+    type filter hook input priority filter; policy accept;
+    iif lo accept
+    tcp dport 8082 ip saddr 192.168.7.50 accept
+    tcp dport 8082 drop
+  }
+}
