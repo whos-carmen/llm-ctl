@@ -4,6 +4,7 @@ mod download;
 mod pve;
 mod proxy;
 mod reap;
+mod rebuild;
 mod store;
 mod supervisor;
 
@@ -26,6 +27,7 @@ pub struct AppState {
     pub store: Option<Arc<store::Store>>,
     pub models: Arc<Mutex<Vec<config::Model>>>,
     pub download: Arc<download::DownloadManager>,
+    pub rebuild: Arc<rebuild::RebuildManager>,
 }
 
 async fn health(State(st): State<AppState>) -> Json<serde_json::Value> {
@@ -172,6 +174,21 @@ async fn handle_hf_status(State(st): State<AppState>) -> Response {
     Json(st.download.job().await).into_response()
 }
 
+async fn handle_rebuild_start(State(st): State<AppState>) -> Response {
+    match st.rebuild.start().await {
+        Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(e) => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+async fn handle_rebuild_status(State(st): State<AppState>) -> Response {
+    Json(st.rebuild.job().await).into_response()
+}
+
 async fn handle_sessions(State(st): State<AppState>) -> Response {
     match &st.store {
         Some(s) => match s.list_sessions(20).await {
@@ -245,6 +262,7 @@ async fn main() -> anyhow::Result<()> {
     // Runtime model registry (config models + HF auto-registered).
     let models = Arc::new(Mutex::new(cfg.models.clone()));
     let download = Arc::new(download::DownloadManager::new(cfg.hf.clone(), models.clone()));
+    let rebuild = Arc::new(rebuild::RebuildManager::new(cfg.llama.clone()));
 
     let state = AppState {
         cfg: cfg.clone(),
@@ -253,6 +271,7 @@ async fn main() -> anyhow::Result<()> {
         store,
         models,
         download,
+        rebuild,
     };
     let app = Router::new()
         .route("/api/health", get(health))
@@ -264,6 +283,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/models/:id/start", axum::routing::post(handle_model_start))
         .route("/api/models/stop", axum::routing::post(handle_model_stop))
         .route("/api/hf/download", axum::routing::post(handle_hf_download).get(handle_hf_status))
+        .route("/api/rebuild", axum::routing::post(handle_rebuild_start).get(handle_rebuild_status))
         .fallback(proxy::fallback)
         .with_state(state);
 
