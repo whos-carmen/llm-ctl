@@ -10,6 +10,7 @@ pub fn reap_legacy_llama() -> Vec<u32> {
     for pid in llama_server_pids() {
         let _ = Command::new("/bin/kill").arg("-TERM").arg(pid.to_string()).status();
     }
+    // Blocking sleep; this is called from async main at startup.
     std::thread::sleep(Duration::from_secs(3)); // grace period
     let mut killed = Vec::new();
     for pid in llama_server_pids() {
@@ -19,7 +20,9 @@ pub fn reap_legacy_llama() -> Vec<u32> {
     killed
 }
 
-/// Scan /proc for processes whose argv mentions "llama-server".
+/// Scan /proc for processes whose comm is `llama-server` (the process name),
+/// not a cmdline substring — avoids collateral-killing shells/editors/grep
+/// whose argv happens to mention "llama-server".
 fn llama_server_pids() -> Vec<u32> {
     let mut out = Vec::new();
     let self_pid = std::process::id();
@@ -32,11 +35,11 @@ fn llama_server_pids() -> Vec<u32> {
             if pid == self_pid {
                 continue;
             }
-            let Ok(cmdline) = std::fs::read(format!("/proc/{pid}/cmdline")) else {
+            // comm is limited to 15 chars and is the process name.
+            let Ok(comm) = std::fs::read_to_string(format!("/proc/{pid}/comm")) else {
                 continue;
             };
-            let joined = String::from_utf8_lossy(&cmdline);
-            if joined.contains("llama-server") {
+            if comm.trim() == "llama-server" {
                 out.push(pid);
             }
         }

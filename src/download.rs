@@ -1,13 +1,13 @@
 //! HuggingFace download job: `uvx hf download` with a live tail log, then
 //! auto-register the finished GGUF into the runtime model list.
 
+use crate::collect::{collect_capped, LineSink};
 use crate::config::{Hf, Model};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
@@ -108,6 +108,9 @@ impl DownloadManager {
 
     pub async fn start(&self, req: &HfDownloadReq) -> Result<(), String> {
         let include = req.include.clone().unwrap_or_else(|| "*.gguf".to_string());
+        if self.cfg.cli.is_empty() {
+            return Err("hf.cli is empty in config".into());
+        }
         // Claim the job under the lock BEFORE spawning so two concurrent
         // /api/hf/download calls cannot both start a job.
         {
@@ -149,16 +152,37 @@ impl DownloadManager {
         let repo = req.repo.clone();
 
         tokio::spawn(async move {
-            let out = collect_lines(stdout).await;
-            let err = collect_lines(stderr).await;
-            let exit = child.wait().await;
-            let ok = exit.as_ref().map(|s| s.success()).unwrap_or(false);
+            // Read stdout+stderr CONCURRENTLY into one capped sink (a child that
+            // fills its stderr pipe while stdout is still open would deadlock a
+            // sequential read). Watch the child with a timeout so a hung `hf`
+            // can't leave the job "running" forever.
+            let sink = LineSink::new(LOG_CAP);
+            let c_out = tokio::spawn(collect_capped(stdout, sink.clone()));
+            let c_err = tokio::spawn(collect_capped(stderr, sink.clone()));
+            let exit: Option<std::process::ExitStatus> =
+                match tokio::time::timeout(
+                std::time::Duration::from_secs(30 * 60),
+                child.wait(),
+            )
+            .await
+            {
+                Ok(r) => r.ok(),
+                Err(_) => {
+                    tracing::warn!("download watchdog: killing hung hf child");
+                    let _ = child.start_kill();
+                    let _ = child.wait().await;
+                    None
+                }
+            };
+            let _ = c_out.await;
+            let _ = c_err.await;
 
             let mut st = state.lock().await;
-            for l in out.iter().chain(err.iter()) {
-                st.push_line(l.clone());
+            for l in sink.snapshot() {
+                st.push_line(l);
             }
             st.finished_at = Some(now());
+            let ok = exit.as_ref().map(|s| s.success()).unwrap_or(false);
             if ok {
                 // Directory walk is blocking I/O: run off the async runtime.
                 let resolved = tokio::task::spawn_blocking({
@@ -192,25 +216,11 @@ impl DownloadManager {
                 }
             } else {
                 st.status = "failed".into();
-                st.error = Some(format!("hf download exit {:?}", exit.map(|s| s.code())));
+                st.error = Some(format!("hf download exit {:?}", exit.as_ref().map(|s| s.code())));
             }
         });
         Ok(())
     }
-}
-
-async fn collect_lines<R: tokio::io::AsyncRead + Unpin>(r: R) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut reader = BufReader::new(r);
-    let mut line = String::new();
-    loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) | Err(_) => break,
-            Ok(_) => lines.push(line.trim_end().to_string()),
-        }
-    }
-    lines
 }
 
 fn now() -> f64 {

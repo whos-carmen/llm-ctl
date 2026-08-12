@@ -1,4 +1,5 @@
 mod config;
+mod collect;
 mod db;
 mod download;
 mod pve;
@@ -338,8 +339,11 @@ async fn main() -> anyhow::Result<()> {
     let cfg = Arc::new(config::Config::load(&cfg_path)?);
     tracing::info!(listen = ?cfg.listen, "config loaded from {cfg_path}");
 
-    // Sole ownership: reclaim any llama-server not started by us.
-    let reaped = reap::reap_legacy_llama();
+    // Sole ownership: reclaim any llama-server not started by us. Runs in a
+    // blocking thread because it sleeps 3s during the TERM->KILL grace period.
+    let reaped = tokio::task::spawn_blocking(reap::reap_legacy_llama)
+        .await
+        .unwrap_or_default();
     tracing::info!(reaped = ?reaped, "reclaimed llama-server ownership");
 
     let worker = Arc::new(Mutex::new(supervisor::WorkerState::new()));

@@ -2,12 +2,12 @@
 //! SHA before/after. Non-disruptive: the running worker keeps serving; a later
 //! stop/start picks up the freshly built binary (same path).
 
+use crate::collect::{collect_capped, LineSink};
 use crate::config::Llama;
 use anyhow::Result;
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
@@ -118,33 +118,38 @@ impl RebuildManager {
     }
 }
 
+/// Run a command once, reading stdout+stderr concurrently into a capped sink,
+/// with a watchdog. Returns (success, collected lines).
 async fn run_and_collect(cmd: &mut Command) -> (bool, Vec<String>) {
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     let Ok(mut child) = cmd.spawn() else {
         return (false, vec!["spawn failed".into()]);
     };
-    let out = collect_lines(child.stdout.take().expect("stdout piped")).await;
-    let err = collect_lines(child.stderr.take().expect("stderr piped")).await;
-    let status = child.wait().await;
+    let sink = LineSink::new(LOG_CAP);
+    let out = child.stdout.take().expect("stdout piped");
+    let err = child.stderr.take().expect("stderr piped");
+    let c_out = tokio::spawn(collect_capped(out, sink.clone()));
+    let c_err = tokio::spawn(collect_capped(err, sink.clone()));
+    let status: Option<std::process::ExitStatus> =
+            match tokio::time::timeout(
+            std::time::Duration::from_secs(30 * 60),
+            child.wait(),
+        )
+        .await
+        {
+            Ok(s) => s.ok(),
+            Err(_) => {
+                tracing::warn!("rebuild watchdog: killing hung child");
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                None
+            }
+        };
+    let _ = c_out.await;
+    let _ = c_err.await;
     let ok = status.map(|s| s.success()).unwrap_or(false);
-    let mut lines = out;
-    lines.extend(err);
-    (ok, lines)
-}
-
-async fn collect_lines<R: tokio::io::AsyncRead + Unpin>(r: R) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut reader = BufReader::new(r);
-    let mut line = String::new();
-    loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) | Err(_) => break,
-            Ok(_) => lines.push(line.trim_end().to_string()),
-        }
-    }
-    lines
+    (ok, sink.snapshot())
 }
 
 async fn git_sha(repo: &str) -> Option<String> {
