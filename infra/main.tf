@@ -7,16 +7,17 @@ locals {
 resource "proxmox_virtual_environment_container" "this" {
   for_each = var.containers
 
-  node_name        = var.node_name
-  vm_id            = each.value.vmid
-  description      = "llm-ctl ${each.key} - vmid ${each.value.vmid}, tag ${var.tag}"
-  tags             = [var.tag]
-  template_file_id = var.template_file_id
-  start            = true
-  unprivileged     = true
+  node_name    = var.node_name
+  vm_id        = each.value.vmid
+  description  = "llm-ctl ${each.key} - vmid ${each.value.vmid}, tag ${var.tag}"
+  tags         = [var.tag]
+  unprivileged = true
+  started      = true
+  start_on_boot = true
 
   operating_system {
-    type = "debian"   # debian-13 base
+    template_file_id = var.template_file_id
+    type             = "debian"   # debian-13 base
   }
 
   features {

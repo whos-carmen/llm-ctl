@@ -7,6 +7,11 @@ variable "pve_user" {
 variable "pve_api_token" {
   type      = string
   sensitive = true
+  # the token SECRET (UUID). run.sh injects it from ~/.keys as TF_VAR_pve_api_token.
+}
+variable "pve_token_id" {
+  type    = string
+  default = "agent-admin"
 }
 variable "node_name" {
   type    = string
