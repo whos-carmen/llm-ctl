@@ -290,6 +290,7 @@ async fn record_turn(
     {
         let mut w = worker.lock().await;
         w.last_turn = Some(serde_json::json!({
+            "session_id": turn.session_id,
             "cache_n": turn.cache_n,
             "prompt_n": turn.prompt_n,
             "predicted_n": turn.predicted_n,

@@ -20,30 +20,34 @@ function pct(n: number, d: number): string {
   return ((n / d) * 100).toFixed(1) + "%";
 }
 
-function cachePct(lastTurn: any, sessions: any[]): string {
-  if (lastTurn) {
+function cachePct(lastTurn: any, sessions: any[], currentSid: string | null): string {
+  if (lastTurn && currentSid && lastTurn.session_id === currentSid) {
     const c = lastTurn.cache_n ?? 0;
     const p = lastTurn.prompt_n ?? 0;
     if (c + p > 0) return pct(c, c + p);
   }
-  const s = (sessions || [])[0];
+  const s = (sessions || []).find((x) => x.id === currentSid);
   if (s && typeof s.cache_hit_pct === "number") return s.cache_hit_pct.toFixed(1) + "%";
   return "--";
 }
 
-function ctxPct(slots: any[]): string {
+function ctxPct(slots: any[], lastTurn: any, currentSid: string | null): string {
+  // Only show context once this session has produced a turn (fresh sessions
+  // start at "--" - the slot would otherwise show the previous session's).
+  if (!(lastTurn && currentSid && lastTurn.session_id === currentSid)) return "--";
   const s = (slots || [])[0];
   if (!s) return "--";
   return pct(s.n_prompt_tokens ?? 0, s.n_ctx ?? 0);
 }
 
-function buildText(data: any): string {
+function buildText(data: any, currentSid: string | null): string {
   const worker = data?.worker || {};
-  return `cache ${cachePct(worker.last_turn, data?.sessions)} · ctx ${ctxPct(worker.slots)}`;
+  return `cache ${cachePct(worker.last_turn, data?.sessions, currentSid)} · ctx ${ctxPct(worker.slots, worker.last_turn, currentSid)}`;
 }
 
 export default function (pi: ExtensionAPI) {
   let text = "cache -- · ctx --";
+  let currentSid: string | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
 
   async function poll(): Promise<string> {
@@ -51,7 +55,7 @@ export default function (pi: ExtensionAPI) {
       const resp = await fetch(ROLLUP_URL, { signal: AbortSignal.timeout(2000) });
       if (!resp.ok) throw new Error(String(resp.status));
       const data = await resp.json();
-      return buildText(data);
+      return buildText(data, currentSid);
     } catch {
       return "cache -- · ctx --";
     }
@@ -72,6 +76,7 @@ export default function (pi: ExtensionAPI) {
   function reportSession(ctx: any) {
     try {
       const sid = ctx?.sessionManager?.getSessionId?.();
+      currentSid = typeof sid === "string" && sid ? sid : null;
       if (typeof sid === "string" && sid) {
         fetch(ROLLUP_URL.replace("/status-rollup", "/session-active"), {
           method: "POST",
@@ -103,6 +108,7 @@ export default function (pi: ExtensionAPI) {
       clearInterval(timer);
       timer = null;
     }
+    currentSid = null;
     try {
       fetch(ROLLUP_URL.replace("/status-rollup", "/session-active"), {
         method: "POST",
