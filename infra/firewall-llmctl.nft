@@ -6,6 +6,6 @@ table inet llmctl {
     type filter hook input priority filter; policy accept;
     iif lo accept
     tcp dport 8082 ip saddr 192.168.7.50 accept
-    tcp dport 8082 drop
+    tcp dport 8082 reject with tcp reset
   }
 }
