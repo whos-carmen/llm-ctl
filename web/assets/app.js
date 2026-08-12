@@ -104,38 +104,55 @@ function renderStats(s) {
   $("#temp-val").setAttribute("title", temp == null ? "—" : temp.toFixed(0) + " °C");
 }
 
-// Live model-load visualizer. Driven by worker status (Starting/Ready) +
-// GPU VRAM (from stats, polled ~2s) growing as the weights load into memory.
+// Live model-load visualizer. Fills 0 -> 100% during Startup using GPU VRAM
+// growth measured against the model's file size as the target footprint, so
+// the bar visibly animates as weights load into memory. Snaps to LOADED on
+// Ready.
+let loadBase = { vram: null, model: null }; // baseline VRAM when load began
 function renderLoad(worker, stats) {
   worker = worker || {};
   stats = stats || {};
   const st = String(worker.status || "Stopped");
   const name = worker.model ? esc(worker.model) : "—";
-  const sizeGb = (worker.model_size_mb != null) ? (worker.model_size_mb / 1024).toFixed(1) + " GB" : "";
-  const v = stats.vram_used_mb != null && stats.vram_total_mb ? (100 * stats.vram_used_mb) / stats.vram_total_mb : 0;
+  const sizeMb = worker.model_size_mb != null ? worker.model_size_mb : null;
+  const gb = (sizeMb != null) ? (sizeMb / 1024).toFixed(1) + " GB" : "";
+  const vramUsed = stats.vram_used_mb != null ? stats.vram_used_mb : null;
 
   $("load-name").textContent = name;
-  $("load-meta").textContent = sizeGb + (stats.vram_used_mb != null ? ` · vr${Math.round(stats.vram_used_mb)}/${Math.round(stats.vram_total_mb)}MB` : "");
+  $("load-meta").textContent = gb;
 
   if (st.startsWith("Starting")) {
-    $("load-status").textContent = "LOADING";
+    // Remember where VRAM was when loading began (per model).
+    if (loadBase.model !== worker.model) { loadBase = { vram: vramUsed, model: worker.model }; }
+    const base = loadBase.vram != null ? loadBase.vram : 0;
+    const target = sizeMb != null ? sizeMb : stats.vram_total_mb || 1;
+    // Progress = how far VRAM has grown from baseline toward the file size.
+    let pct = (target - base > 0) ? Math.min(100, 100 * ((vramUsed - base) / (target - base))) : 0;
+    pct = Math.max(pct, 3); // keep a little visible while starting
+    const el = worker.load_elapsed_s != null ? worker.load_elapsed_s.toFixed(1) + "s" : "…";
+    $("load-status").textContent = Math.round(pct) + "%";
     $("load-status").className = "text-xs font-bold text-cyan animate-pulse";
-    $("load-bar").style.width = Math.max(6, v) + "%";
-    const el = worker.load_elapsed_s != null ? worker.load_elapsed_s.toFixed(0) + "s" : "";
-    $("load-elapsed").textContent = el ? "loading " + name + " · " + el : "loading…";
+    $("load-bar").style.width = pct + "%";
+    $("load-bar").className = "h-full bg-cyan transition-all duration-500";
+    $("load-elapsed").textContent = "loading " + name + " · " + el;
   } else if (st.startsWith("Ready")) {
+    loadBase = { vram: null, model: null };
+    const pct = (vramUsed != null && stats.vram_total_mb) ? Math.round(100 * vramUsed / stats.vram_total_mb) : 0;
+    const el = worker.load_elapsed_s != null ? worker.load_elapsed_s.toFixed(1) + "s" : "";
     $("load-status").textContent = "LOADED";
     $("load-status").className = "text-xs font-bold text-lime";
-    $("load-bar").style.width = Math.max(v, 2) + "%";
-    $("load-bar").className = "h-full bg-lime transition-all duration-500 rounded";
-    const el = worker.load_elapsed_s != null ? worker.load_elapsed_s.toFixed(0) + "s" : "";
+    $("load-bar").style.width = Math.max(pct, 4) + "%";
+    $("load-bar").className = "h-full bg-lime transition-all duration-500";
+    $("load-meta").textContent = (gb ? gb + " " : "") + (vramUsed != null ? "· VRAM " + Math.round(vramUsed) + "/" + Math.round(stats.vram_total_mb) + " MB" : "");
     $("load-elapsed").textContent = "loaded · " + name + (el ? " · " + el : "");
   } else if (st.startsWith("Crashed")) {
+    loadBase = { vram: null, model: null };
     $("load-status").textContent = "CRASH";
     $("load-status").className = "text-xs font-bold text-red";
     $("load-bar").style.width = "0%";
     $("load-elapsed").textContent = "worker crashed";
   } else {
+    loadBase = { vram: null, model: null };
     $("load-status").textContent = "STOPPED";
     $("load-status").className = "text-xs font-bold text-faint";
     $("load-bar").style.width = "0%";
