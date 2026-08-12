@@ -2,7 +2,7 @@
 
 Status snapshot for picking up in a fresh agent session. Read `DESIGN.md` in
 this repo for the full architecture; this file is the "where we are / what's
-next" handoff. Last updated 2026-08-12 (M6 done; M7 = rebuild job).
+next" handoff. Last updated 2026-08-12 (M7 done; M8 = public TLS face on CT 200).
 
 ---
 
@@ -47,8 +47,8 @@ f2496dc  Initial design + OpenTofu ops-tier scaffold
 
 Untracked / not committed yet next session: `docs/CHANNEL-ISSUES.md`,
 `HANDOFF.md`. Committed so far: M2 (cf2cebc), M3 (7807395), M4 (1706aab),
-M5 (1c41931), M6 (a28b862). Commits use `gh` identity `whos-carmen`
-(`87442520+whos-carmen@users.noreply.github.com`).
+M5 (1c41931), M6 (a28b862), M7 (5498687). Commits use `gh` identity
+`whos-carmen` (`87442520+whos-carmen@users.noreply.github.com`).
 Daemon runs detached (`nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &`).
 
 ## 3. Environment / tooling
@@ -136,7 +136,9 @@ cd ~/llm-ctl && nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &
 - **M6 — DONE (a28b862)**: HF download job (`uvx hf download`) with live tail
   log + auto-register into the runtime model list; verified with Qwen2.5-0.5B
   (download -> register -> switch -> completion).
-- **M7** rebuild job (git pull + cmake build) with streaming log + non-disruptive swap.
+- **M7 — DONE (5498687)**: rebuild job — `git pull --ff-only` + `cmake --build`,
+  live log, SHA before/after, non-disruptive (worker keeps serving; stop/start
+  picks up the new binary). Verified end-to-end.
 - **M8** reverse-proxy/TLS public face on CT `200`; replace dev-only token,
   add shared API token.
 - **M9** web panel (Tailwind v4 + isotope theme) wired to `/api/*`, SSE.
