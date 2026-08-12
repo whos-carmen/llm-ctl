@@ -54,39 +54,19 @@ impl Store {
         Ok(())
     }
 
-    /// Session id: client-supplied, else reuse the latest session active in the
-    /// last 30 minutes, else create a new one.
+    /// Session id: client-supplied, else a brand-new session. No implicit
+    /// "recent session" reuse — sessions are bound only by the client's
+    /// explicit id (X-Session-Id header or the pi /api/session-active hint).
     pub async fn resolve_session(&self, client_id: Option<&str>, model: &str) -> Result<String> {
-        if let Some(cid) = client_id.map(str::trim).filter(|s| !s.is_empty()) {
-            sqlx::query(
-                "INSERT INTO sessions (id, created_at, updated_at, model) \
-                 VALUES ($1, extract(epoch from now()), extract(epoch from now()), $2) \
-                 ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at",
-            )
-            .bind(cid)
-            .bind(model)
-            .execute(&self.pool)
-            .await?;
-            return Ok(cid.to_string());
-        }
-        let row: Option<(String,)> = sqlx::query_as(
-            "SELECT id FROM sessions \
-             WHERE updated_at > extract(epoch from now()) - 1800 \
-             ORDER BY updated_at DESC LIMIT 1",
-        )
-        .fetch_optional(&self.pool)
-        .await?;
-        if let Some((sid,)) = row {
-            sqlx::query("UPDATE sessions SET updated_at = extract(epoch from now()) WHERE id = $1")
-                .bind(&sid)
-                .execute(&self.pool)
-                .await?;
-            return Ok(sid);
-        }
-        let sid = gen_session_id();
+        let sid = client_id
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .unwrap_or_else(gen_session_id);
         sqlx::query(
             "INSERT INTO sessions (id, created_at, updated_at, model) \
-             VALUES ($1, extract(epoch from now()), extract(epoch from now()), $2)",
+             VALUES ($1, extract(epoch from now()), extract(epoch from now()), $2) \
+             ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at",
         )
         .bind(&sid)
         .bind(model)

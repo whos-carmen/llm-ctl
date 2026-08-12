@@ -2,7 +2,7 @@
 
 Status snapshot for picking up in a fresh agent session. Read `DESIGN.md` in
 this repo for the full architecture; this file is the "where we are / what's
-next" handoff. Last updated 2026-08-12 (M8.1 + M9 + M10 done; M11 = next).
+next" handoff. Last updated 2026-08-12 (M8.1 + M9 + M10 done; §8 decisions implemented).
 
 ---
 
@@ -177,6 +177,14 @@ cd ~/llm-ctl && nohup ./target/debug/llm-ctl > /tmp/llmctl.log 2>&1 &
     existing SIGTERM->grace->SIGKILL path, no orphan, exit 0. Restart caps +
     `LLM_CTL_CONFIG` env override were already present (verified). Both signal
     paths tested clean.
+- **§8 decisions — session binding + single-client (DONE)**:
+  - `proxy.rs` + `store.rs`: sessions bind by `X-Session-Id` header only (the
+    30-min heuristic and body-`user` fallback removed). pi relays its session
+    id via `/api/session-active` (kept — pi can't set a header on `/v1`).
+  - `proxy.rs` + `supervisor.rs`: `WorkerState.in_flight` hard-rejects (409) a
+    second completion while one turn is in flight; released on completion/
+    error/disconnect. Verified: 409 on overlap; header binds, body-`user`
+    does not merge sessions; recovery after client disconnect works.
 
 Open questions live at DESIGN.md §8 (single-client strictness, auto-load vs
 404, HF quant-picking, PVE container mgmt scope, dev-token hygiene).

@@ -159,18 +159,24 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
         );
     }
 
-    // Session binding: X-Session-Id header > body "user" > active-session hint
-    // (pi extension reports its session id) > "active within 30 min" > new.
+    // Single-active-client: hard-reject a completion while another turn is in
+    // flight (llama-server only serves one anyway; refuse the overlap rather
+    // than queue it). Atomic check-and-set under the worker mutex.
+    {
+        let mut w = st.worker.lock().await;
+        if w.in_flight {
+            return err_json(409, "another completion is already in flight; single-client mode");
+        }
+        w.in_flight = true;
+    }
+
+    // Session binding: client's explicit session id only. Either the
+    // X-Session-Id header or (for pi, which can't set a header on /v1 calls)
+    // the session the pi extension reported via /api/session-active. No body
+    // "user" fallback, no implicit "recent session" reuse.
     let session_id = {
         let hint = st.active_session.lock().await.clone();
-        let sid = session_header
-            .or_else(|| {
-                parsed
-                    .get("user")
-                    .and_then(|u| u.as_str())
-                    .map(|s| s.to_string())
-            })
-            .or(hint);
+        let sid = session_header.or(hint);
         match &st.store {
             Some(s) => match s.resolve_session(sid.as_deref(), &model).await {
                 Ok(id) => id,
@@ -194,7 +200,10 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
         .await
     {
         Ok(r) => r,
-        Err(e) => return err_json(502, &format!("upstream unreachable: {e}")),
+        Err(e) => {
+            st.worker.lock().await.in_flight = false;
+            return err_json(502, &format!("upstream unreachable: {e}"));
+        }
     };
 
     if stream {
@@ -210,9 +219,13 @@ async fn handle_completion(st: AppState, req: Request<Body>) -> AxResponse {
         }
         let bytes = match upstream.bytes().await {
             Ok(b) => b,
-            Err(_) => return err_json(502, "upstream read failed"),
+            Err(_) => {
+                st.worker.lock().await.in_flight = false;
+                return err_json(502, "upstream read failed");
+            }
         };
         record_from_response(&st, session_id, &model, messages, max_tokens, temperature, &bytes, start).await;
+        st.worker.lock().await.in_flight = false;
         let mut builder = AxResponse::builder().status(status);
         for (k, v) in out_headers {
             builder = builder.header(k, v);
@@ -458,6 +471,9 @@ async fn stream_and_record(
             };
             record_turn(&store, &worker, &turn).await;
         }
+        // Turn done (success, upstream error, or client disconnect): release
+        // the single-client busy flag.
+        worker.lock().await.in_flight = false;
     });
 
     let body = Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx));

@@ -568,12 +568,14 @@ config (`[proxmox.cts]`) and the IaC, so one change stays in lockstep.
 All prior "open questions" are resolved. Items marked **RESOLVED (keep)**
 need no code change; items marked **TODO** are decided behaviors to implement.
 
-- **Session binding — TODO**: bind a request to a session **by `X-Session-Id`
-  header only** (drop the "active within 30 min" heuristic). The pi extension
-  already sends its session id via `/api/session-active`.
-- **Single-client strictness — TODO**: **hard-reject** a second distinct client
-  while one turn is in flight (need a client-id / busy flag in the daemon);
-  do not fall back to llama-server's soft overlap queue.
+- **Session binding — DONE**: a request is bound to a session by its
+  `X-Session-Id` header only (the 30-min heuristic and body-`user` fallback are
+  gone). pi relays its session id via `/api/session-active`, kept as the
+  explicit client-keyed source since pi can't set a header on `/v1` calls.
+- **Single-client strictness — DONE**: the proxy **hard-rejects (409)** a
+  second completion while one turn is in flight (`WorkerState.in_flight`),
+  dropping to llama-server's soft overlap queue. The flag is released when the
+  turn completes (success, upstream error, or client disconnect).
 - **Model-not-active request — RESOLVED (keep)**: respond 404/409 with a hint.
   The UI is the intended way to load a model.
 - **HF download granularity — TODO**: after listing a repo, **pick the wanted
