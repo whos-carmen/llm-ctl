@@ -33,6 +33,20 @@
           <div id="llama-info" class="text-xs text-dim text-cyan truncate">—</div>
         </div>
 
+        <!-- Model load visualizer -->
+        <div class="bg-surface border border-line rounded p-3">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="text-cyan tracking-widest text-xs">MODEL LOAD</h2>
+            <span id="load-status" class="text-xs font-bold"></span>
+          </div>
+          <div id="load-name" class="text-sm font-bold text-text truncate">—</div>
+          <div id="load-meta" class="text-xs text-dim"></div>
+          <div class="mt-2 h-2.5 w-full bg-raised rounded overflow-hidden">
+            <div id="load-bar" class="h-full bg-cyan transition-all duration-500 rounded" style="width:0%"></div>
+          </div>
+          <div id="load-elapsed" class="text-xs text-faint mt-1"></div>
+        </div>
+
         <!-- Models -->
         <div class="bg-surface border border-line rounded p-3">
           <h2 class="text-lime tracking-widest text-xs mb-2">MODELS</h2>

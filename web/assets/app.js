@@ -104,6 +104,45 @@ function renderStats(s) {
   $("#temp-val").setAttribute("title", temp == null ? "—" : temp.toFixed(0) + " °C");
 }
 
+// Live model-load visualizer. Driven by worker status (Starting/Ready) +
+// GPU VRAM (from stats, polled ~2s) growing as the weights load into memory.
+function renderLoad(worker, stats) {
+  worker = worker || {};
+  stats = stats || {};
+  const st = String(worker.status || "Stopped");
+  const name = worker.model ? esc(worker.model) : "—";
+  const sizeGb = (worker.model_size_mb != null) ? (worker.model_size_mb / 1024).toFixed(1) + " GB" : "";
+  const v = stats.vram_used_mb != null && stats.vram_total_mb ? (100 * stats.vram_used_mb) / stats.vram_total_mb : 0;
+
+  $("load-name").textContent = name;
+  $("load-meta").textContent = sizeGb + (stats.vram_used_mb != null ? ` · vr${Math.round(stats.vram_used_mb)}/${Math.round(stats.vram_total_mb)}MB` : "");
+
+  if (st.startsWith("Starting")) {
+    $("load-status").textContent = "LOADING";
+    $("load-status").className = "text-xs font-bold text-cyan animate-pulse";
+    $("load-bar").style.width = Math.max(6, v) + "%";
+    const el = worker.load_elapsed_s != null ? worker.load_elapsed_s.toFixed(0) + "s" : "";
+    $("load-elapsed").textContent = el ? "loading " + name + " · " + el : "loading…";
+  } else if (st.startsWith("Ready")) {
+    $("load-status").textContent = "LOADED";
+    $("load-status").className = "text-xs font-bold text-lime";
+    $("load-bar").style.width = Math.max(v, 2) + "%";
+    $("load-bar").className = "h-full bg-lime transition-all duration-500 rounded";
+    const el = worker.load_elapsed_s != null ? worker.load_elapsed_s.toFixed(0) + "s" : "";
+    $("load-elapsed").textContent = "loaded · " + name + (el ? " · " + el : "");
+  } else if (st.startsWith("Crashed")) {
+    $("load-status").textContent = "CRASH";
+    $("load-status").className = "text-xs font-bold text-red";
+    $("load-bar").style.width = "0%";
+    $("load-elapsed").textContent = "worker crashed";
+  } else {
+    $("load-status").textContent = "STOPPED";
+    $("load-status").className = "text-xs font-bold text-faint";
+    $("load-bar").style.width = "0%";
+    $("load-elapsed").textContent = "no active model";
+  }
+}
+
 // llama build info + previous builds
   const li = s.llama || {};
   $("llama-info").textContent = `commit ${esc(li.commit)} · ${esc(li.branch)} · ${esc(li.binary)}`;
@@ -119,6 +158,7 @@ function renderStats(s) {
     : "no recent builds";
 
   renderStats(s.stats);
+  renderLoad(s.worker, s.stats);
 }
 
 function renderJob(name, job, label) {
