@@ -118,7 +118,10 @@ impl Supervisor {
             st.model = Some(model.clone());
             st.started_at = Some(std::time::Instant::now());
             st.stopping = false;
-            st.restarts = 0;
+            // NOTE: do not reset `restarts` here. An auto-restart via
+            // `maybe_restart` must NOT clear the crash counter, else
+            // `max_restarts` can never cap a crash loop. The counter is reset
+            // only on an intentional model switch in `start_model`.
         }
 
         // Keep worker output for debugging (user state dir, not /tmp - symlink safe).
@@ -138,7 +141,17 @@ impl Supervisor {
             cmd.env(k, v);
         }
 
-        let mut child = cmd.spawn()?;
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                // Don't leave the worker stuck in `Starting` with no PID: mark
+                // it Crashed so poll/maybe_restart and the panel can react.
+                let mut st = self.state.lock().await;
+                st.pid = None;
+                st.status = WorkerStatus::Crashed(format!("spawn failed: {e}"));
+                return Err(e.into());
+            }
+        };
         let pid = child.id();
         tracing::info!(pid, model = %model.id, port = self.worker.port, "worker spawned");
         {
@@ -176,13 +189,25 @@ impl Supervisor {
             }
         }
         if self.state.lock().await.pid.is_some() {
-            self.stop().await?;
+            self.stop_inner().await?;
+        }
+        // Intentional switch: reset the crash-restart counter (an auto-restart
+        // via maybe_restart must NOT do this).
+        {
+            let mut st = self.state.lock().await;
+            st.restarts = 0;
         }
         self.spawn(model, host).await
     }
 
-    /// Stop the current worker: SIGTERM, grace, SIGKILL.
+    /// Stop the current worker: SIGTERM, grace, SIGKILL. Serialized under the
+    /// lifecycle lock so concurrent stop/start/restart can't interleave.
     pub async fn stop(&self) -> Result<()> {
+        let _guard = self.lifecycle.lock().await;
+        self.stop_inner().await
+    }
+
+    async fn stop_inner(&self) -> Result<()> {
         let pid = self.state.lock().await.pid;
         if let Some(pid) = pid {
             {
@@ -269,13 +294,23 @@ impl Supervisor {
             return false;
         }
         let Some(model) = model else { return false };
+        // Serialize the restart (increment + stop + spawn) under lifecycle so
+        // it can't interleave with a concurrent /start or /stop.
+        let _guard = self.lifecycle.lock().await;
+        // Re-check under the lock: state may have changed while waiting.
+        {
+            let st = self.state.lock().await;
+            if !matches!(st.status, WorkerStatus::Crashed(_)) {
+                return false;
+            }
+        }
         {
             let mut st = self.state.lock().await;
             st.restarts += 1;
             st.last_restart = Some(std::time::Instant::now());
         }
         tracing::warn!(model = %model.id, "restarting crashed worker");
-        let _ = self.stop().await; // clear stale pid/port (no-op if already gone)
+        let _ = self.stop_inner().await; // clear stale pid/port (no-op if already gone)
         match self.spawn(&model, "127.0.0.1").await {
             Ok(()) => true,
             Err(e) => {
