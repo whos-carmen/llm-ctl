@@ -57,25 +57,27 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  function refresh(ctx: any) {
-    ctx.ui.setStatus("llama", text);
+  // Never let a status-bar poke take pi down (setStatus during a TUI render
+  // transition can be racy - e.g. right after resuming a session).
+  function safeSetStatus(ctx: any, value: string) {
+    try {
+      ctx.ui.setStatus("llama", value);
+    } catch (e) {
+      console.warn("llama-stats setStatus failed:", e);
+    }
   }
 
   pi.on("session_start", async (_event, ctx) => {
-    ctx.ui.setStatus("llama", "cache -- · ctx --");
+    safeSetStatus(ctx, "cache -- · ctx --");
+    // Let the TUI settle after loading/resuming a session before poking it.
+    await new Promise((r) => setTimeout(r, 1000));
     text = await poll();
-    refresh(ctx);
+    safeSetStatus(ctx, text);
     if (timer) clearInterval(timer);
     timer = setInterval(async () => {
       text = await poll();
-      refresh(ctx);
+      safeSetStatus(ctx, text);
     }, 2000);
-  });
-
-  pi.on("message_end", async (_event, ctx) => {
-    text = await poll();
-    refresh(ctx);
-    return {};
   });
 
   pi.on("session_shutdown", async () => {
