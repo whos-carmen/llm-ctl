@@ -3,10 +3,11 @@
  *
  * Polls the llm-ctl daemon (/api/status-rollup) and publishes
  *   cache <hit%> · ctx <used%>
- * cache% comes from the most recent recorded turn (last_turn) when present,
- * otherwise from the most recent session's aggregate cache hit rate (Postgres)
- * - so a resumed session shows its conversation's cache state right away.
- * ctx%   = worker slot n_prompt_tokens / n_ctx.
+ * cache% is the CURRENT pi session's aggregate cache hit rate (Postgres) - the
+ * same number llm-ctl's sessions view shows, so the bar and the session table
+ * always agree. It refreshes after every recorded turn.
+ * ctx%   = worker slot n_prompt_tokens / n_ctx, shown once this session has
+ * produced a turn (fresh sessions start at "--").
  *
  * Plain text; pi-bar applies the isotope color states in its config.toml.
  */
@@ -20,20 +21,14 @@ function pct(n: number, d: number): string {
   return ((n / d) * 100).toFixed(1) + "%";
 }
 
-function cachePct(lastTurn: any, sessions: any[], currentSid: string | null): string {
-  if (lastTurn && currentSid && lastTurn.session_id === currentSid) {
-    const c = lastTurn.cache_n ?? 0;
-    const p = lastTurn.prompt_n ?? 0;
-    if (c + p > 0) return pct(c, c + p);
-  }
+function cachePct(sessions: any[], currentSid: string | null): string {
   const s = (sessions || []).find((x) => x.id === currentSid);
   if (s && typeof s.cache_hit_pct === "number") return s.cache_hit_pct.toFixed(1) + "%";
   return "--";
 }
 
 function ctxPct(slots: any[], lastTurn: any, currentSid: string | null): string {
-  // Only show context once this session has produced a turn (fresh sessions
-  // start at "--" - the slot would otherwise show the previous session's).
+  // Only show context once this session has produced a turn.
   if (!(lastTurn && currentSid && lastTurn.session_id === currentSid)) return "--";
   const s = (slots || [])[0];
   if (!s) return "--";
@@ -42,7 +37,7 @@ function ctxPct(slots: any[], lastTurn: any, currentSid: string | null): string 
 
 function buildText(data: any, currentSid: string | null): string {
   const worker = data?.worker || {};
-  return `cache ${cachePct(worker.last_turn, data?.sessions, currentSid)} · ctx ${ctxPct(worker.slots, worker.last_turn, currentSid)}`;
+  return `cache ${cachePct(data?.sessions, currentSid)} · ctx ${ctxPct(worker.slots, worker.last_turn, currentSid)}`;
 }
 
 export default function (pi: ExtensionAPI) {
