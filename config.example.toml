@@ -48,9 +48,11 @@ ct_vmid_start  = 200
 pgurl = "postgres://llm_ctl:REDACTED@192.168.7.51:5432/llm_ctl"
 schema_migrate = true
 
-# Exactly ONE model is active at a time. autostart picks one at boot.
+# Exactly ONE model is active at a time. autostart defaults to false: no model
+# is loaded at boot (start one from the panel); set autostart = true on one
+# model to have the daemon auto-load it on start.
 [[models]]
 id          = "lfm2.5-8b"
 model       = "/home/pixie/.cache/huggingface/hub/models--unsloth--LFM2.5-8B-A1B-GGUF/snapshots/37563684c4a625e9958906fd924e15095cf9c896/LFM2.5-8B-A1B-UD-Q5_K_XL.gguf"
-autostart   = true
+autostart   = false
 description = "LFM2.5 8B A1B unsloth UD Q5_K_XL"

@@ -316,17 +316,8 @@ async fn handle_session_active(State(st): State<AppState>, Json(body): Json<serd
 async fn handle_status_rollup(State(st): State<AppState>) -> Response {
     let worker = {
         let w = st.worker.lock().await;
-        let model_path = w.model.as_ref().map(|m| m.model.clone());
-        let model_size_mb = model_path
-            .as_deref()
-            .and_then(|p| std::fs::metadata(p).ok())
-            .map(|md| md.len() as f64 / 1048576.0);
-        let load_elapsed_s = w.started_at.map(|s| s.elapsed().as_secs_f64());
         json!({
             "model": w.model_id,
-            "model_path": model_path,
-            "model_size_mb": model_size_mb,
-            "load_elapsed_s": load_elapsed_s,
             "pid": w.pid,
             "status": format!("{:?}", w.status),
             "last_request_at": w.last_request_at,

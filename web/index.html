@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>llm-ctl</title>
-  <link rel="stylesheet" href="/assets/app.css?v=5" />
+  <link rel="stylesheet" href="/assets/app.css?v=6" />
 </head>
 <body class="min-h-screen bg-bg text-text font-sans text-sm">
   <div class="max-w-[90%] mx-auto px-4 py-4 flex flex-col gap-4 overflow-x-clip">
@@ -31,20 +31,6 @@
         <div class="bg-surface border border-line rounded p-3">
           <h2 class="text-cyan tracking-widest text-xs mb-1">LLAMA</h2>
           <div id="llama-info" class="text-xs text-dim text-cyan truncate">—</div>
-        </div>
-
-        <!-- Model load visualizer -->
-        <div class="bg-surface border border-line rounded p-3">
-          <div class="flex items-center justify-between mb-1">
-            <h2 class="text-cyan tracking-widest text-xs">MODEL LOAD</h2>
-            <span id="load-status" class="text-xs font-bold"></span>
-          </div>
-          <div id="load-name" class="text-sm font-bold text-text truncate">—</div>
-          <div id="load-meta" class="text-xs text-dim"></div>
-          <div class="mt-2 h-2.5 w-full bg-raised rounded overflow-hidden">
-            <div id="load-bar" class="h-full bg-cyan transition-all duration-500 rounded" style="width:0%"></div>
-          </div>
-          <div id="load-elapsed" class="text-xs text-faint mt-1"></div>
         </div>
 
         <!-- Models -->
@@ -149,6 +135,6 @@
     </div>
   </div>
 
-  <script src="/assets/app.js?v=5"></script>
+  <script src="/assets/app.js?v=6"></script>
 </body>
 </html>
